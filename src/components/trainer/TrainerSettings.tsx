@@ -1,0 +1,399 @@
+import React, { useState } from 'react';
+import {
+  Settings,
+  Save,
+  ShieldCheck,
+  Building2,
+  Lock,
+  Sliders,
+  Download,
+  Trash2,
+  CheckCircle2,
+  AlertTriangle,
+  RefreshCw,
+  KeyRound,
+  FileJson,
+  Mail,
+  UserCheck
+} from 'lucide-react';
+import { TrainerSystemSettings, Student, DemoStudent, AttendanceRecord } from '../../types';
+
+interface TrainerSettingsProps {
+  settings: TrainerSystemSettings;
+  onSaveSettings: (settings: TrainerSystemSettings) => void;
+  students: Student[];
+  demos: DemoStudent[];
+  attendance: AttendanceRecord[];
+  onClearAttendance: () => void;
+  onWipeDatabase: () => void;
+}
+
+export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
+  settings,
+  onSaveSettings,
+  students,
+  demos,
+  attendance,
+  onClearAttendance,
+  onWipeDatabase
+}) => {
+  const [formData, setFormData] = useState<TrainerSystemSettings>({ ...settings });
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSaveSettings(formData);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
+  };
+
+  // Full Database JSON Backup
+  const handleExportFullBackup = () => {
+    const backupData = {
+      exportDate: new Date().toISOString(),
+      institution: formData.institutionName,
+      trainer: formData.trainerName,
+      stats: {
+        totalStudents: students.length,
+        totalDemos: demos.length,
+        totalAttendanceRecords: attendance.length
+      },
+      students,
+      demos,
+      attendance,
+      settings: formData
+    };
+
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(backupData, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('download', `PPS_Institution_Backup_${new Date().toISOString().split('T')[0]}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-white border-b border-[#d9e0e7] -mt-6 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-5">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-[#0a6ed1]">
+              Administration & Preferences
+            </div>
+            <h1 className="text-2xl font-bold text-[#1d2d3e] tracking-tight">Trainer Settings</h1>
+            <p className="text-xs text-slate-500 mt-1">
+              Configure system credentials, institution profile, attendance policies, and backup data
+            </p>
+          </div>
+
+          {saveSuccess && (
+            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-md text-xs font-semibold">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>Settings Saved Successfully!</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Card 1: Trainer Profile & Credentials */}
+          <div className="bg-white border border-[#d9e0e7] rounded-lg p-5 shadow-xs space-y-4">
+            <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
+              <ShieldCheck className="w-4 h-4 text-[#0a6ed1]" />
+              <h2 className="text-sm font-bold text-slate-800">Trainer Profile & Security Credentials</h2>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Trainer Login Username (Fixed)
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value="PPSTrainer"
+                  className="w-full p-2 bg-slate-100 border border-slate-300 rounded font-mono text-slate-700 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Trainer Login Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={formData.trainerPassword}
+                    onChange={e => setFormData({ ...formData, trainerPassword: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded font-mono focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2.5 top-2 text-[11px] text-[#0a6ed1] font-semibold hover:underline"
+                  >
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <span className="text-[10px] text-slate-400">Default: PPS@2026</span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Student Login Default Password
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.studentPassword}
+                  onChange={e => setFormData({ ...formData, studentPassword: e.target.value })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded font-mono focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                />
+                <span className="text-[10px] text-slate-400">Default: Student@PPS26</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Trainer Name</label>
+                  <input
+                    type="text"
+                    value={formData.trainerName}
+                    onChange={e => setFormData({ ...formData, trainerName: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Trainer Phone</label>
+                  <input
+                    type="text"
+                    value={formData.trainerPhone}
+                    onChange={e => setFormData({ ...formData, trainerPhone: e.target.value })}
+                    placeholder="+91 98400 00000"
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Trainer Email</label>
+                <input
+                  type="email"
+                  value={formData.trainerEmail}
+                  onChange={e => setFormData({ ...formData, trainerEmail: e.target.value })}
+                  placeholder="trainer@pps-sw.com"
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Institution Profile */}
+          <div className="bg-white border border-[#d9e0e7] rounded-lg p-5 shadow-xs space-y-4">
+            <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
+              <Building2 className="w-4 h-4 text-[#0a6ed1]" />
+              <h2 className="text-sm font-bold text-slate-800">Institution & Evaluation Contact</h2>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Institution Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.institutionName}
+                  onChange={e => setFormData({ ...formData, institutionName: e.target.value })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Evaluation / Course Completion Recipient Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={formData.institutionEmail}
+                  onChange={e => setFormData({ ...formData, institutionEmail: e.target.value })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                />
+                <span className="text-[10px] text-slate-400">
+                  Students will send their completion verification email directly to this address.
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Helpdesk Phone
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.institutionPhone || ''}
+                    onChange={e => setFormData({ ...formData, institutionPhone: e.target.value })}
+                    placeholder="+91 44 2800 1234"
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Website URL
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.institutionWebsite || ''}
+                    onChange={e => setFormData({ ...formData, institutionWebsite: e.target.value })}
+                    placeholder="https://pps-sw.com"
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Attendance & Scheduling Policies */}
+          <div className="bg-white border border-[#d9e0e7] rounded-lg p-5 shadow-xs space-y-4">
+            <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
+              <Sliders className="w-4 h-4 text-[#0a6ed1]" />
+              <h2 className="text-sm font-bold text-slate-800">Attendance & Batch Policies</h2>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Default Class Link Expiration
+                </label>
+                <select
+                  value={formData.defaultLinkDuration}
+                  onChange={e => setFormData({ ...formData, defaultLinkDuration: e.target.value as any })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                >
+                  <option value="entire_day">Entire Day (Until 23:59:59)</option>
+                  <option value="1_hour">1 Hour</option>
+                  <option value="2_hours">2 Hours</option>
+                  <option value="4_hours">4 Hours</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Minimum Attendance % for Course Completion
+                </label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    min="50"
+                    max="100"
+                    value={formData.minAttendancePercentForCompletion}
+                    onChange={e => setFormData({ ...formData, minAttendancePercentForCompletion: Number(e.target.value) })}
+                    className="w-24 p-2 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                  />
+                  <span className="text-slate-600 font-semibold">%</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Irregular Status Flag Threshold (Consecutive Absences)
+                </label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="14"
+                    value={formData.irregularThresholdDays}
+                    onChange={e => setFormData({ ...formData, irregularThresholdDays: Number(e.target.value) })}
+                    className="w-24 p-2 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                  />
+                  <span className="text-slate-600">days of unexcused absence</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: Database Backup & Maintenance */}
+          <div className="bg-white border border-[#d9e0e7] rounded-lg p-5 shadow-xs space-y-4">
+            <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
+              <FileJson className="w-4 h-4 text-[#0a6ed1]" />
+              <h2 className="text-sm font-bold text-slate-800">Database Backup & Maintenance</h2>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                <span className="font-semibold text-slate-800 block mb-1">Export Complete System Backup</span>
+                <p className="text-[11px] text-slate-500 mb-2">
+                  Download a JSON file containing all students, demo leads, attendance registers, and templates.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleExportFullBackup}
+                  className="px-3.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded font-semibold text-xs flex items-center gap-1.5 shadow-2xs"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Download JSON Backup</span>
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                <div>
+                  <span className="font-semibold text-slate-800 block">Clear Attendance Records Only</span>
+                  <span className="text-[11px] text-slate-500">Purges past session attendance logs without deleting students</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Are you sure you want to clear all attendance records? This cannot be undone.')) {
+                      onClearAttendance();
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-xs font-semibold"
+                >
+                  Clear Attendance
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                <div>
+                  <span className="font-semibold text-rose-800 block">Wipe & Reset Database</span>
+                  <span className="text-[11px] text-slate-500">Deletes all students, demos, and attendance to start clean</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('DANGER: This will delete all enrolled students and attendance records. Continue?')) {
+                      onWipeDatabase();
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded text-xs font-semibold"
+                >
+                  Reset Database
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Save Bar */}
+        <div className="bg-white border border-[#d9e0e7] rounded-lg p-4 shadow-xs flex items-center justify-between">
+          <span className="text-xs text-slate-500">
+            Changes to credentials and policies will take effect immediately.
+          </span>
+          <button
+            type="submit"
+            className="px-6 py-2.5 bg-[#0a6ed1] hover:bg-[#0854a0] text-white rounded text-xs font-bold shadow-md flex items-center gap-2 cursor-pointer transition-colors"
+          >
+            <Save className="w-4 h-4" />
+            <span>Save All Settings</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};

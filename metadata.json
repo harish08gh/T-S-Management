@@ -1,0 +1,6 @@
+{
+  "name": "PPS Training & Student Management",
+  "description": "Training management system for trainers and students: attendance tracking with student touch-link logging, demo management, class scheduling, irregular student management, and course completion mail processing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
