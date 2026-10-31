@@ -9,6 +9,7 @@ import {
 import {
   Link2,
   CalendarCheck2,
+  Calendar,
   GraduationCap,
   ExternalLink,
   Clock,
@@ -24,6 +25,13 @@ import {
   ShieldCheck,
   User
 } from 'lucide-react';
+import {
+  isWeekend as checkIsWeekend,
+  getDayMode,
+  getStudentEffectiveTiming,
+  isStudentScheduledOnDate,
+  getStudentNextClassInfo
+} from '../../utils/scheduleUtils';
 
 interface StudentPortalProps {
   currentStudent: Student;
@@ -50,6 +58,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [timeLeftStr, setTimeLeftStr] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
+
+  // Weekdays vs Weekend Schedule Intelligence
+  const isScheduledToday = isStudentScheduledOnDate(currentStudent, todayStr);
+  const effectiveTimingToday = getStudentEffectiveTiming(currentStudent, todayStr);
+  const nextClassInfo = getStudentNextClassInfo(currentStudent, todayStr);
 
   // Check if current student has already registered attendance today
   const todayRecord = attendanceRecords.find(
@@ -157,7 +170,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                {currentStudent.course} • Batch: {currentStudent.timing} ({currentStudent.mode})
+                {currentStudent.course} • Batch: {effectiveTimingToday} ({currentStudent.mode} Mode: {currentStudent.mode === 'Weekdays' ? 'Mon-Fri' : 'Sat-Sun'})
               </p>
             </div>
           </div>
@@ -252,6 +265,39 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             </div>
 
             <div className="p-6 space-y-5">
+              {/* Batch Schedule Status Banner */}
+              {!isScheduledToday ? (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-3.5 flex items-start space-x-3 text-xs text-amber-900 shadow-2xs">
+                  <Calendar className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold flex items-center gap-2">
+                      <span>Scheduled Batch Off-Day ({currentStudent.mode} Batch)</span>
+                      <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-2 py-0.2 rounded-full">
+                        No Regular Class Today
+                      </span>
+                    </div>
+                    <p className="text-amber-800 text-[11px] mt-0.5">
+                      Your batch classes are conducted on <strong>{currentStudent.mode === 'Weekdays' ? 'Monday through Friday' : 'Saturdays and Sundays'}</strong>. Next scheduled session: <strong>{nextClassInfo.dayName} ({nextClassInfo.timing})</strong>.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3.5 flex items-start space-x-3 text-xs text-blue-900 shadow-2xs">
+                  <Clock className="w-5 h-5 text-[#0a6ed1] shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold flex items-center gap-2">
+                      <span>Class Day Active ({currentStudent.mode} Batch)</span>
+                      <span className="text-[10px] bg-[#0a6ed1] text-white font-bold px-2 py-0.2 rounded-full">
+                        Scheduled Session Today
+                      </span>
+                    </div>
+                    <p className="text-blue-800 text-[11px] mt-0.5">
+                      Your class is scheduled for today at <strong>{effectiveTimingToday}</strong>.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Attendance Status Banner */}
               {hasAttendedToday || attendanceJustMarked ? (
                 <div className="bg-emerald-50 border border-emerald-300 rounded-lg p-4 flex items-center justify-between text-xs text-emerald-900">

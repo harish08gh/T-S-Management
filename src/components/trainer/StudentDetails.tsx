@@ -15,6 +15,12 @@ import {
   X
 } from 'lucide-react';
 import { Student, StudentStatus, ClassMode, ClassType } from '../../types';
+import {
+  isWeekend as checkIsWeekend,
+  getDayMode,
+  isStudentScheduledOnDate,
+  getStudentEffectiveTiming
+} from '../../utils/scheduleUtils';
 
 interface StudentDetailsProps {
   students: Student[];
@@ -27,6 +33,9 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ students }) => {
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [courseFilter, setCourseFilter] = useState<string>('ALL');
   const [selectedStudentForView, setSelectedStudentForView] = useState<Student | null>(null);
+
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayBatchMode = useMemo(() => getDayMode(todayStr), [todayStr]);
 
   // Extract unique courses for filter
   const uniqueCourses = useMemo(() => {
@@ -47,7 +56,9 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ students }) => {
         statusFilter === 'ALL' || std.status.toLowerCase() === statusFilter.toLowerCase();
 
       const matchesMode =
-        modeFilter === 'ALL' || std.mode.toLowerCase() === modeFilter.toLowerCase();
+        modeFilter === 'ALL' ||
+        (modeFilter === 'TODAY' && isStudentScheduledOnDate(std, todayStr)) ||
+        std.mode.toLowerCase() === modeFilter.toLowerCase();
 
       const matchesType =
         typeFilter === 'ALL' || std.type.toLowerCase() === typeFilter.toLowerCase();
@@ -57,7 +68,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ students }) => {
 
       return matchesSearch && matchesStatus && matchesMode && matchesType && matchesCourse;
     });
-  }, [students, searchTerm, statusFilter, modeFilter, typeFilter, courseFilter]);
+  }, [students, searchTerm, statusFilter, modeFilter, typeFilter, courseFilter, todayStr]);
 
   // Export to CSV functionality
   const handleExportCSV = () => {
@@ -227,8 +238,9 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ students }) => {
               className="w-full text-xs py-2 px-2.5 bg-slate-50 border border-slate-300 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
             >
               <option value="ALL">All Modes</option>
-              <option value="Weekdays">Weekdays</option>
-              <option value="Weekend">Weekend</option>
+              <option value="TODAY">🎯 Today's Batches ({todayBatchMode})</option>
+              <option value="Weekdays">Weekdays (Mon-Fri)</option>
+              <option value="Weekend">Weekend (Sat-Sun)</option>
             </select>
           </div>
 

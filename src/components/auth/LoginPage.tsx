@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   GraduationCap,
   Lock,
@@ -8,7 +8,11 @@ import {
   ArrowRight,
   AlertCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  Link2,
+  Copy,
+  Check,
+  Share2
 } from 'lucide-react';
 import { Student } from '../../types';
 
@@ -29,7 +33,66 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   expectedTrainerPassword = 'PPS@2026',
   expectedStudentPassword = 'Student@PPS26'
 }) => {
-  const [loginType, setLoginType] = useState<'trainer' | 'student'>('trainer');
+  // Determine initial portal based on URL hash or query params
+  const [loginType, setLoginType] = useState<'trainer' | 'student'>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.toLowerCase();
+      const search = window.location.search.toLowerCase();
+      if (hash.includes('student') || search.includes('portal=student')) {
+        return 'student';
+      }
+      if (hash.includes('trainer') || search.includes('portal=trainer')) {
+        return 'trainer';
+      }
+    }
+    return 'trainer';
+  });
+
+  // Keep URL in sync with selected portal
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const hash = window.location.hash.toLowerCase();
+      const search = window.location.search.toLowerCase();
+      if (hash.includes('student') || search.includes('portal=student')) {
+        setLoginType('student');
+      } else if (hash.includes('trainer') || search.includes('portal=trainer')) {
+        setLoginType('trainer');
+      }
+    };
+
+    window.addEventListener('hashchange', handleLocationChange);
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('popstate', handleLocationChange);
+    };
+  }, []);
+
+  const switchPortal = (type: 'trainer' | 'student') => {
+    setLoginType(type);
+    setErrorMessage(null);
+    if (typeof window !== 'undefined') {
+      window.location.hash = `/${type}`;
+    }
+  };
+
+  // Copy Direct Link feedback
+  const [copiedType, setCopiedType] = useState<'trainer' | 'student' | null>(null);
+
+  const getPortalUrl = (type: 'trainer' | 'student') => {
+    if (typeof window === 'undefined') return '';
+    const base = window.location.origin + window.location.pathname;
+    return `${base}#/${type}`;
+  };
+
+  const handleCopyLink = (type: 'trainer' | 'student') => {
+    const url = getPortalUrl(type);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url);
+    }
+    setCopiedType(type);
+    setTimeout(() => setCopiedType(null), 2500);
+  };
 
   // Trainer Credentials - strictly blank on load, no autofill
   const [trainerUsername, setTrainerUsername] = useState('');
@@ -97,7 +160,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       {/* Background Accent Grid */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#1f29370f_1px,transparent_1px),linear-gradient(to_bottom,#1f29370f_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none"></div>
 
-      <div className="w-full max-w-md relative z-10 space-y-6">
+      <div className="w-full max-w-md relative z-10 space-y-5">
         {/* Brand Header */}
         <div className="text-center space-y-2">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-gradient-to-tr from-[#0a6ed1] to-[#258cf0] shadow-xl border border-blue-400/40 text-white mb-2">
@@ -108,7 +171,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               PPS Training Portal
             </span>
             <span className="text-slate-500">•</span>
-            <span className="text-xs font-medium text-slate-300">Enterprise Solutions</span>
+            <span className="text-xs font-medium text-slate-300">Enterprise Academic Suite</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             PPS Software Academy
@@ -118,16 +181,110 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           </p>
         </div>
 
+        {/* Dedicated Direct Links Toolbar */}
+        <div className="bg-[#192636]/90 border border-slate-700/80 rounded-xl p-3 shadow-lg space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-slate-300 px-1 font-semibold">
+            <span className="flex items-center gap-1.5 text-blue-300">
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Direct Portal Access Links</span>
+            </span>
+            <span className="text-[10px] text-slate-400 font-normal">Use direct links to bookmark</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {/* Trainer Portal Link */}
+            <div className={`p-2 rounded-lg border transition-all ${
+              loginType === 'trainer'
+                ? 'bg-blue-950/60 border-blue-500/60 text-blue-100'
+                : 'bg-slate-800/50 border-slate-700 text-slate-300'
+            }`}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-bold text-[11px] flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Trainer URL</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyLink('trainer')}
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-blue-600/30 hover:bg-blue-600/60 text-blue-200 border border-blue-400/40 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Copy direct Trainer URL"
+                >
+                  {copiedType === 'trainer' ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span className="text-emerald-300">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <a
+                href="#/trainer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  switchPortal('trainer');
+                }}
+                className="block font-mono text-[10px] text-blue-300 hover:text-blue-100 truncate cursor-pointer underline decoration-blue-500/40"
+              >
+                /#/trainer
+              </a>
+            </div>
+
+            {/* Student Portal Link */}
+            <div className={`p-2 rounded-lg border transition-all ${
+              loginType === 'student'
+                ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-100'
+                : 'bg-slate-800/50 border-slate-700 text-slate-300'
+            }`}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-bold text-[11px] flex items-center gap-1">
+                  <User className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Student URL</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyLink('student')}
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600/60 text-emerald-200 border border-emerald-400/40 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Copy direct Student URL"
+                >
+                  {copiedType === 'student' ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span className="text-emerald-300">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <a
+                href="#/student"
+                onClick={(e) => {
+                  e.preventDefault();
+                  switchPortal('student');
+                }}
+                className="block font-mono text-[10px] text-emerald-300 hover:text-emerald-100 truncate cursor-pointer underline decoration-emerald-500/40"
+              >
+                /#/student
+              </a>
+            </div>
+          </div>
+        </div>
+
         {/* Login Card */}
         <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200/80 p-6 sm:p-8 space-y-6">
           {/* Persona Switcher */}
           <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-semibold">
             <button
               type="button"
-              onClick={() => {
-                setLoginType('trainer');
-                setErrorMessage(null);
-              }}
+              onClick={() => switchPortal('trainer')}
               className={`py-2 px-3 rounded-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
                 loginType === 'trainer'
                   ? 'bg-white text-[#0a6ed1] shadow-xs font-bold border border-slate-200/80'
@@ -139,10 +296,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => {
-                setLoginType('student');
-                setErrorMessage(null);
-              }}
+              onClick={() => switchPortal('student')}
               className={`py-2 px-3 rounded-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
                 loginType === 'student'
                   ? 'bg-white text-emerald-700 shadow-xs font-bold border border-slate-200/80'
@@ -314,7 +468,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
         {/* Footer */}
         <div className="text-center text-xs text-slate-400">
-          PPS Training Management System • Cloud Database (pps-sw)
+          PPS Training Management System • Enterprise Academic Suite
         </div>
       </div>
     </div>

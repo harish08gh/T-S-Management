@@ -14,12 +14,24 @@ import {
   User,
   Layers,
   ChevronRight,
+  ChevronLeft,
   TrendingUp,
   BarChart3,
   CalendarDays,
-  FileSpreadsheet
+  FileSpreadsheet,
+  SunMedium,
+  CalendarOff,
+  Clock,
+  ArrowRight
 } from 'lucide-react';
-import { AttendanceRecord, Student, AttendanceStatus } from '../../types';
+import { AttendanceRecord, Student, AttendanceStatus, TrainerSystemSettings, TrainerLeave, ClassMode } from '../../types';
+import {
+  isWeekend as checkIsWeekend,
+  getDayMode,
+  getStudentEffectiveTiming,
+  isStudentScheduledOnDate,
+  getStudentNextClassInfo
+} from '../../utils/scheduleUtils';
 
 interface AttendanceTrackingProps {
   ongoingStudents: Student[];
@@ -27,18 +39,40 @@ interface AttendanceTrackingProps {
   onRecordAttendance: (record: AttendanceRecord) => void;
   onUpdateTopic: (id: string, topic: string) => void;
   todayStr: string;
+  settings?: TrainerSystemSettings;
 }
 
-type AttendanceViewMode = 'daily' | 'student_wise' | 'month_wise';
+type AttendanceViewMode = 'daily' | 'student_wise' | 'month_wise' | 'calendar_wise';
+
+function getDayOfWeekName(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'long' });
+}
+
+function checkIsWeekOff(dateStr: string, weekOffDays?: string[]): boolean {
+  if (!weekOffDays || !weekOffDays.length || !dateStr) return false;
+  const dayName = getDayOfWeekName(dateStr);
+  return weekOffDays.includes(dayName);
+}
+
+function checkTrainerLeave(dateStr: string, leaves?: TrainerLeave[]): TrainerLeave | undefined {
+  if (!leaves || !leaves.length || !dateStr) return undefined;
+  return leaves.find(l => l.date === dateStr);
+}
 
 export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
   ongoingStudents,
   attendance,
   onRecordAttendance,
   onUpdateTopic,
-  todayStr
+  todayStr,
+  settings
 }) => {
   const [viewMode, setViewMode] = useState<AttendanceViewMode>('daily');
+
+  // Calendar view month state (Year and Month)
+  const [calendarDate, setCalendarDate] = useState<Date>(() => new Date());
 
   // Date filters
   const [singleDate, setSingleDate] = useState<string>(todayStr);
@@ -61,9 +95,15 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
     ongoingStudents.length > 0 ? ongoingStudents[0].id : ''
   );
 
-  // Search & Status filters
+  // Search, Status, and Batch Schedule filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [dailyBatchFilter, setDailyBatchFilter] = useState<'SCHEDULED' | 'ALL' | 'Weekdays' | 'Weekend'>('SCHEDULED');
+
+  // Day info for selected single date
+  const isSingleDateWeekend = checkIsWeekend(singleDate);
+  const singleDateMode: ClassMode = isSingleDateWeekend ? 'Weekend' : 'Weekdays';
+  const singleDateDayName = getDayOfWeekName(singleDate);
 
   // Topic editing state
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
@@ -100,21 +140,28 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
     return map;
   }, [dateRecords]);
 
-  // Daily student rows
+  // Daily student rows with Weekday/Weekend timing intelligence
   const dailyRows = useMemo(() => {
     return ongoingStudents.map(student => {
       const existing = dailyRecordsMap.get(student.id);
+      const effectiveTiming = getStudentEffectiveTiming(student, singleDate);
+      const isScheduledForDate = isStudentScheduledOnDate(student, singleDate);
+      const nextInfo = getStudentNextClassInfo(student, singleDate);
+
       return {
         student,
         record: existing || null,
         attendanceStatus: existing ? existing.attendance : ('Absent' as AttendanceStatus),
         topicCovered: existing ? existing.topicCovered : '',
-        time: existing ? existing.time : (student.timing ? student.timing.split('-')[0].trim() : '09:00 AM'),
+        time: existing ? existing.time : (effectiveTiming ? effectiveTiming.split(/[-–]/)[0].trim() : '09:00 AM'),
+        effectiveTiming,
+        isScheduledForDate,
+        nextInfo,
         markedBy: existing ? existing.markedBy : 'Trainer (Attendance Page)',
         hasRecord: !!existing
       };
     });
-  }, [ongoingStudents, dailyRecordsMap]);
+  }, [ongoingStudents, dailyRecordsMap, singleDate]);
 
   const filteredDailyRows = useMemo(() => {
     return dailyRows.filter(row => {
@@ -129,9 +176,14 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
         (statusFilter === 'Absent' && (!row.hasRecord || row.attendanceStatus === 'Absent')) ||
         (statusFilter === 'TouchLink' && row.hasRecord && row.markedBy.includes('Touch Link'));
 
-      return matchesSearch && matchesStatus;
+      const matchesBatch =
+        dailyBatchFilter === 'ALL' ||
+        (dailyBatchFilter === 'SCHEDULED' && row.isScheduledForDate) ||
+        row.student.mode === dailyBatchFilter;
+
+      return matchesSearch && matchesStatus && matchesBatch;
     });
-  }, [dailyRows, searchTerm, statusFilter]);
+  }, [dailyRows, searchTerm, statusFilter, dailyBatchFilter]);
 
   // STUDENT-WISE VIEW: records for selected student within date range
   const studentRecords = useMemo(() => {
@@ -346,11 +398,11 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
           </div>
         </div>
 
-        {/* 3 View Mode Tabs */}
-        <div className="max-w-7xl mx-auto mt-4 pt-2 border-t border-slate-100 flex space-x-2">
+        {/* 4 View Mode Tabs */}
+        <div className="max-w-7xl mx-auto mt-4 pt-2 border-t border-slate-100 flex flex-wrap gap-2">
           <button
             onClick={() => setViewMode('daily')}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all ${
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
               viewMode === 'daily'
                 ? 'bg-[#0a6ed1] text-white shadow-xs font-bold'
                 : 'text-slate-600 hover:bg-slate-100'
@@ -361,7 +413,7 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
           </button>
           <button
             onClick={() => setViewMode('student_wise')}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all ${
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
               viewMode === 'student_wise'
                 ? 'bg-[#0a6ed1] text-white shadow-xs font-bold'
                 : 'text-slate-600 hover:bg-slate-100'
@@ -372,7 +424,7 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
           </button>
           <button
             onClick={() => setViewMode('month_wise')}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all ${
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
               viewMode === 'month_wise'
                 ? 'bg-[#0a6ed1] text-white shadow-xs font-bold'
                 : 'text-slate-600 hover:bg-slate-100'
@@ -380,6 +432,17 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
           >
             <CalendarDays className="w-3.5 h-3.5" />
             <span>Month-Wise Attendance</span>
+          </button>
+          <button
+            onClick={() => setViewMode('calendar_wise')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
+              viewMode === 'calendar_wise'
+                ? 'bg-[#0a6ed1] text-white shadow-xs font-bold'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Calendar Date-Wise View</span>
           </button>
         </div>
       </div>
@@ -431,6 +494,25 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
                   <option value="Present">Present Only</option>
                   <option value="Absent">Absent Only</option>
                   <option value="TouchLink">Student Touch Link Only</option>
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-slate-600">Batch Filter</label>
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    {singleDateDayName} ({singleDateMode})
+                  </span>
+                </div>
+                <select
+                  value={dailyBatchFilter}
+                  onChange={e => setDailyBatchFilter(e.target.value as any)}
+                  className="text-xs p-1.5 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1] font-semibold"
+                >
+                  <option value="SCHEDULED">🎯 Scheduled for this Date ({singleDateMode} Batches)</option>
+                  <option value="ALL">All Ongoing Batches (Weekdays & Weekend)</option>
+                  <option value="Weekdays">Weekdays Batches (Mon-Fri)</option>
+                  <option value="Weekend">Weekend Batches (Sat-Sun)</option>
                 </select>
               </div>
             </div>
@@ -552,7 +634,47 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
 
       {/* VIEW 1: DAILY ATTENDANCE REGISTER */}
       {viewMode === 'daily' && (
-        <div className="bg-white border border-[#d9e0e7] rounded-lg shadow-xs overflow-hidden">
+        <div className="space-y-3">
+          {/* Week-Off / Leave Alert Banners */}
+          {checkIsWeekOff(singleDate, settings?.weekOffDays) && (
+            <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-lg flex items-center justify-between text-xs text-purple-900 shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 shrink-0">
+                  <SunMedium className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold">Trainer Scheduled Week-Off: </span>
+                  <span>
+                    {getDayOfWeekName(singleDate)} ({singleDate}) is set as a Trainer Week-Off in settings.
+                  </span>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 bg-purple-200 text-purple-800 font-bold rounded text-[11px] uppercase tracking-wide border border-purple-300">
+                Week-Off Day
+              </span>
+            </div>
+          )}
+
+          {checkTrainerLeave(singleDate, settings?.leaves) && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg flex items-center justify-between text-xs text-rose-900 shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-700 shrink-0">
+                  <CalendarOff className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold">Trainer On Leave: </span>
+                  <span>
+                    Trainer leave is logged for {singleDate} — Reason: "{checkTrainerLeave(singleDate, settings?.leaves)?.reason}".
+                  </span>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 bg-rose-200 text-rose-800 font-bold rounded text-[11px] uppercase tracking-wide border border-rose-300">
+                Trainer Leave
+              </span>
+            </div>
+          )}
+
+          <div className="bg-white border border-[#d9e0e7] rounded-lg shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
@@ -583,12 +705,27 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
                           <div className="text-[10px] text-slate-500 font-normal truncate max-w-[160px]">
                             {row.student.course}
                           </div>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold border ${
+                              row.student.mode === 'Weekend'
+                                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                : 'bg-blue-50 text-blue-700 border-blue-200'
+                            }`}>
+                              {row.student.mode} ({row.student.mode === 'Weekdays' ? 'Mon-Fri' : 'Sat-Sun'})
+                            </span>
+                            {!row.isScheduledForDate && (
+                              <span className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded font-medium" title={`Scheduled class meets on ${row.nextInfo.dayName}`}>
+                                Off-Day ({row.nextInfo.dayName})
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-3 font-mono text-slate-600 whitespace-nowrap">
                           {singleDate}
                         </td>
                         <td className="py-3 px-3 font-mono text-slate-600 whitespace-nowrap">
-                          {row.time}
+                          <div className="font-semibold text-slate-800">{row.time}</div>
+                          <div className="text-[9px] text-slate-400 font-normal">{row.effectiveTiming}</div>
                         </td>
 
                         {/* Attendance Toggle Buttons */}
@@ -706,6 +843,7 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       )}
 
@@ -896,6 +1034,242 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
           </div>
         </div>
       )}
+
+      {/* VIEW 4: CALENDAR DATE-WISE ATTENDANCE VIEW */}
+      {viewMode === 'calendar_wise' && (() => {
+        const calYear = calendarDate.getFullYear();
+        const calMonth = calendarDate.getMonth();
+        const monthName = calendarDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+        const firstDayIdx = new Date(calYear, calMonth, 1).getDay();
+        const totalDays = new Date(calYear, calMonth + 1, 0).getDate();
+
+        // Previous month days for padding
+        const prevMonthTotalDays = new Date(calYear, calMonth, 0).getDate();
+
+        const cells: Array<{
+          dayNum: number;
+          isCurrentMonth: boolean;
+          dateStr: string;
+        }> = [];
+
+        // Leading padding cells from previous month
+        for (let i = firstDayIdx - 1; i >= 0; i--) {
+          const d = prevMonthTotalDays - i;
+          const prevMonth = calMonth === 0 ? 11 : calMonth - 1;
+          const prevYear = calMonth === 0 ? calYear - 1 : calYear;
+          const dateStr = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          cells.push({ dayNum: d, isCurrentMonth: false, dateStr });
+        }
+
+        // Current month cells
+        for (let d = 1; d <= totalDays; d++) {
+          const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          cells.push({ dayNum: d, isCurrentMonth: true, dateStr });
+        }
+
+        // Trailing padding cells to complete 7-day row
+        const remainder = cells.length % 7;
+        if (remainder !== 0) {
+          const needed = 7 - remainder;
+          for (let d = 1; d <= needed; d++) {
+            const nextMonth = calMonth === 11 ? 0 : calMonth + 1;
+            const nextYear = calMonth === 11 ? calYear + 1 : calYear;
+            const dateStr = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            cells.push({ dayNum: d, isCurrentMonth: false, dateStr });
+          }
+        }
+
+        return (
+          <div className="space-y-4">
+            {/* Calendar Controls & Month Switcher */}
+            <div className="bg-white border border-[#d9e0e7] rounded-lg p-4 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setCalendarDate(new Date(calYear, calMonth - 1, 1))}
+                    className="p-1.5 hover:bg-white rounded text-slate-700 hover:shadow-2xs transition-all cursor-pointer"
+                    title="Previous month"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCalendarDate(new Date(calYear, calMonth + 1, 1))}
+                    className="p-1.5 hover:bg-white rounded text-slate-700 hover:shadow-2xs transition-all cursor-pointer"
+                    title="Next month"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">
+                  {monthName}
+                </h2>
+
+                <button
+                  type="button"
+                  onClick={() => setCalendarDate(new Date())}
+                  className="px-2.5 py-1 bg-blue-50 text-[#0a6ed1] hover:bg-blue-100 border border-blue-200 rounded text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  Today
+                </button>
+              </div>
+
+              {/* Legend */}
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="flex items-center gap-1 text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Present
+                </span>
+                <span className="flex items-center gap-1 text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span> Absent
+                </span>
+                <span className="flex items-center gap-1 text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 font-medium">
+                  <SunMedium className="w-3 h-3 text-purple-600" /> Week-Off
+                </span>
+                <span className="flex items-center gap-1 text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 font-medium">
+                  <CalendarOff className="w-3 h-3 text-rose-600" /> Trainer Leave
+                </span>
+              </div>
+            </div>
+
+            {/* Calendar Grid */}
+            <div className="bg-white border border-[#d9e0e7] rounded-lg shadow-xs overflow-hidden">
+              {/* Day of Week Headers */}
+              <div className="grid grid-cols-7 border-b border-[#eef2f6] bg-[#f8fafc] text-center text-xs font-bold text-slate-700 divide-x divide-[#eef2f6]">
+                {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => (
+                  <div key={d} className={`py-2.5 ${i === 0 || i === 6 ? 'text-blue-700 bg-blue-50/40' : ''}`}>
+                    <span className="hidden sm:inline">{d}</span>
+                    <span className="sm:hidden">{d.slice(0, 3)}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Day Cells Grid */}
+              <div className="grid grid-cols-7 divide-x divide-y divide-[#eef2f6]">
+                {cells.map((cell, idx) => {
+                  const isToday = cell.dateStr === todayStr;
+                  const isWeekOff = checkIsWeekOff(cell.dateStr, settings?.weekOffDays);
+                  const trainerLeave = checkTrainerLeave(cell.dateStr, settings?.leaves);
+                  const dayRecords = attendance.filter(a => a.date === cell.dateStr);
+                  const presentCount = dayRecords.filter(a => a.attendance === 'Present').length;
+                  const absentCount = dayRecords.filter(a => a.attendance === 'Absent').length;
+                  const topics = Array.from(new Set(dayRecords.map(r => r.topicCovered).filter(Boolean)));
+
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => {
+                        setSingleDate(cell.dateStr);
+                        setViewMode('daily');
+                      }}
+                      className={`min-h-[105px] p-2 flex flex-col justify-between transition-all cursor-pointer group ${
+                        !cell.isCurrentMonth
+                          ? 'bg-slate-50/60 opacity-40 hover:opacity-80'
+                          : isToday
+                          ? 'bg-blue-50/40 hover:bg-blue-50/80 ring-1 ring-inset ring-blue-400'
+                          : isWeekOff
+                          ? 'bg-purple-50/30 hover:bg-purple-50/70'
+                          : trainerLeave
+                          ? 'bg-rose-50/30 hover:bg-rose-50/70'
+                          : 'bg-white hover:bg-slate-50'
+                      }`}
+                      title={`Click to open daily attendance register for ${cell.dateStr}`}
+                    >
+                      {/* Top Header of Cell */}
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                            isToday
+                              ? 'bg-[#0a6ed1] text-white shadow-xs'
+                              : 'text-slate-800'
+                          }`}
+                        >
+                          {cell.dayNum}
+                        </span>
+
+                        <div className="flex items-center gap-1">
+                          {isWeekOff && (
+                            <span className="text-[9px] bg-purple-100 text-purple-800 font-bold px-1.5 py-0.2 rounded border border-purple-200">
+                              Week-Off
+                            </span>
+                          )}
+                          {trainerLeave && (
+                            <span
+                              className="text-[9px] bg-rose-100 text-rose-800 font-bold px-1.5 py-0.2 rounded border border-rose-200 truncate max-w-[65px]"
+                              title={trainerLeave.reason}
+                            >
+                              Leave
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Middle: Attendance Stats or Status */}
+                      <div className="my-1.5 space-y-1">
+                        {dayRecords.length > 0 ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-[10px] font-semibold flex-wrap">
+                              <span className="text-emerald-700 bg-emerald-100/80 border border-emerald-300 px-1 py-0.2 rounded">
+                                {presentCount} Present
+                              </span>
+                              {absentCount > 0 && (
+                                <span className="text-rose-700 bg-rose-100/80 border border-rose-300 px-1 py-0.2 rounded">
+                                  {absentCount} Absent
+                                </span>
+                              )}
+                            </div>
+                            {topics.length > 0 && (
+                              <div className="text-[10px] text-slate-500 font-medium truncate max-w-full">
+                                📖 {topics[0]}
+                              </div>
+                            )}
+                          </div>
+                        ) : isWeekOff ? (
+                          <div className="text-[10px] text-purple-600 italic">
+                            Trainer Week-Off
+                          </div>
+                        ) : trainerLeave ? (
+                          <div className="text-[10px] text-rose-600 italic truncate" title={trainerLeave.reason}>
+                            {trainerLeave.reason}
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-slate-300 italic group-hover:text-slate-400">
+                            No logs
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bottom Footer Indicator */}
+                      <div className="text-[9px] text-[#0a6ed1] font-semibold opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-0.5">
+                        <span>Open Register</span>
+                        <ArrowRight className="w-2.5 h-2.5" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Helper Footer Card */}
+            <div className="bg-blue-50/70 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#0a6ed1]" />
+                <span>
+                  Calendar View: Showing date-by-date session attendance, week-off schedules, and trainer leaves. Click any date box to immediately open or record attendance for that date.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewMode('daily')}
+                className="text-xs font-bold text-[#0a6ed1] hover:underline shrink-0 ml-4 cursor-pointer"
+              >
+                Go to Daily Register &rarr;
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

@@ -4,6 +4,13 @@ export type ClassType = 'Online' | 'Offline';
 export type DemoStatus = 'Converted' | 'Not Converted' | 'Pending';
 export type AttendanceStatus = 'Present' | 'Absent';
 
+export interface TemporaryTimingOverride {
+  date: string; // YYYY-MM-DD
+  timing: string; // e.g. "11:00 AM - 12:30 PM"
+  reason?: string;
+  setAt?: string;
+}
+
 export interface Student {
   id: string;
   sno?: number;
@@ -17,6 +24,9 @@ export interface Student {
   mode: ClassMode;
   type: ClassType;
   timing: string;
+  weekdayTiming?: string;
+  weekendTiming?: string;
+  tempTimingOverrides?: Record<string, { timing: string; reason?: string; setAt?: string }>;
   completionPercentage: number; // 0 - 100
   trainerName: string;
   remark: string;
@@ -98,6 +108,23 @@ export type StudentTab =
 
 export type UserRole = 'trainer' | 'student';
 
+export interface TrainerLeave {
+  id: string;
+  date: string; // YYYY-MM-DD
+  reason: string;
+  createdAt?: string;
+}
+
+export interface ShiftTiming {
+  start: string; // e.g. "09:00 AM"
+  end: string;   // e.g. "06:00 PM"
+}
+
+export interface LunchBreak {
+  start: string; // e.g. "01:00 PM"
+  end: string;   // e.g. "02:00 PM"
+}
+
 export interface TrainerSystemSettings {
   trainerName: string;
   trainerEmail: string;
@@ -111,4 +138,9 @@ export interface TrainerSystemSettings {
   defaultLinkDuration: '1_hour' | '2_hours' | '4_hours' | 'entire_day';
   minAttendancePercentForCompletion: number;
   irregularThresholdDays: number;
+  weekOffDays: string[]; // e.g. ['Sunday', 'Saturday']
+  lunchBreak: LunchBreak;
+  leaves: TrainerLeave[];
+  shiftTimingWeekday: ShiftTiming;
+  shiftTimingWeekend: ShiftTiming;
 }

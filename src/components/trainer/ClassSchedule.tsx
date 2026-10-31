@@ -25,6 +25,13 @@ import {
 } from 'lucide-react';
 import { Student, ClassMode, ClassType, ClassLink } from '../../types';
 import { downloadCSV, parseCSVText } from '../../utils/csvHelper';
+import {
+  isWeekend as checkIsWeekend,
+  getDayMode,
+  getStudentEffectiveTiming,
+  isStudentScheduledOnDate,
+  getStudentNextClassInfo
+} from '../../utils/scheduleUtils';
 
 interface ClassScheduleProps {
   ongoingStudents: Student[];
@@ -120,6 +127,48 @@ export const ClassSchedule: React.FC<ClassScheduleProps> = ({
   const [irregularReasonInput, setIrregularReasonInput] = useState<string>(
     'Absent for multiple sessions without prior approval'
   );
+
+  // Modal: Temporary Timing Override for a specific date
+  const [tempTimingStudent, setTempTimingStudent] = useState<Student | null>(null);
+  const [tempDate, setTempDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [tempTimingInput, setTempTimingInput] = useState<string>('11:00 AM - 12:30 PM');
+  const [tempReasonInput, setTempReasonInput] = useState<string>('Temporary timing adjustment for session');
+
+  const openTempTimingModal = (student: Student) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const existing = student.tempTimingOverrides?.[todayStr];
+    setTempTimingStudent(student);
+    setTempDate(todayStr);
+    setTempTimingInput(existing ? existing.timing : student.timing || '09:00 AM - 10:30 AM');
+    setTempReasonInput(existing?.reason || 'Temporary timing change for today');
+  };
+
+  const handleSaveTempTiming = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tempTimingStudent || !tempTimingInput) return;
+    const current = { ...(tempTimingStudent.tempTimingOverrides || {}) };
+    current[tempDate] = {
+      timing: tempTimingInput.trim(),
+      reason: tempReasonInput.trim() || 'Temporary timing change',
+      setAt: new Date().toISOString()
+    };
+    onSaveStudent({
+      ...tempTimingStudent,
+      tempTimingOverrides: current
+    });
+    setTempTimingStudent(null);
+  };
+
+  const handleClearTempTiming = (dateStr: string) => {
+    if (!tempTimingStudent || !tempTimingStudent.tempTimingOverrides) return;
+    const current = { ...tempTimingStudent.tempTimingOverrides };
+    delete current[dateStr];
+    onSaveStudent({
+      ...tempTimingStudent,
+      tempTimingOverrides: current
+    });
+    setTempTimingStudent(null);
+  };
 
   // Inline Quick Edit state
   const [inlineEditRowId, setInlineEditRowId] = useState<string | null>(null);
@@ -235,10 +284,10 @@ export const ClassSchedule: React.FC<ClassScheduleProps> = ({
   // --- CSV TEMPLATE DOWNLOAD ---
   const handleDownloadTemplate = () => {
     const csvContent =
-`Name,Phone,Email,Timing,Course,DOJ,Mode,Type,CompletionPercentage,TrainerName,Remark,IsIrregular
-Harish Kumar,+91 98450 12345,harish@example.com,09:00 AM - 10:30 AM,Full Stack Web Development,2026-10-01,Weekdays,Online,35,PPSTrainer,Regular batch,No
-Priya Sharma,+91 98450 67890,priya.s@example.com,07:00 PM - 08:30 PM,SAP FICO & S/4HANA,2026-10-15,Weekend,Offline,15,PPSTrainer,Fast learner,No
-Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analytics & AI,2026-10-10,Weekdays,Online,50,PPSTrainer,Active participant,No`;
+`Name,Phone,Email,Timing,WeekdayTiming,WeekendTiming,Course,DOJ,Mode,Type,CompletionPercentage,TrainerName,Remark,IsIrregular
+Harish Kumar,+91 98450 12345,harish@example.com,09:00 AM - 10:30 AM,09:00 AM - 10:30 AM,,Full Stack Web Development,2026-10-01,Weekdays,Online,35,PPSTrainer,Regular weekday batch,No
+Priya Sharma,+91 98450 67890,priya.s@example.com,10:00 AM - 01:00 PM,,10:00 AM - 01:00 PM,SAP FICO & S/4HANA,2026-10-15,Weekend,Offline,15,PPSTrainer,Weekend batch,No
+Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,11:00 AM - 12:30 PM,,Data Analytics & AI,2026-10-10,Weekdays,Online,50,PPSTrainer,Active participant,No`;
 
     downloadCSV('pps_class_schedule_template.csv', csvContent);
   };
@@ -271,6 +320,8 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
         const phoneIdx = getIdx(['phone', 'contact', 'mobile']);
         const emailIdx = getIdx(['email', 'mail']);
         const timingIdx = getIdx(['timing', 'time', 'slot']);
+        const weekdayTimingIdx = getIdx(['weekdaytiming', 'weekday_timing', 'weekday time', 'weekdays timing']);
+        const weekendTimingIdx = getIdx(['weekendtiming', 'weekend_timing', 'weekend time', 'weekend timing']);
         const courseIdx = getIdx(['course', 'subject']);
         const dojIdx = getIdx(['doj', 'joining', 'date']);
         const modeIdx = getIdx(['mode']);
@@ -286,7 +337,6 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
         }
 
         const parsed: Student[] = [];
-        const existingPhones = new Set(ongoingStudents.map(s => s.phone));
 
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i];
@@ -303,6 +353,14 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
           
           const rawMode = modeIdx !== -1 && row[modeIdx] ? row[modeIdx].trim().toLowerCase() : '';
           const mode: ClassMode = rawMode.includes('weekend') ? 'Weekend' : 'Weekdays';
+
+          const weekdayTiming = weekdayTimingIdx !== -1 && row[weekdayTimingIdx]
+            ? row[weekdayTimingIdx].trim()
+            : (mode === 'Weekdays' ? timing : undefined);
+
+          const weekendTiming = weekendTimingIdx !== -1 && row[weekendTimingIdx]
+            ? row[weekendTimingIdx].trim()
+            : (mode === 'Weekend' ? timing : undefined);
 
           const rawType = typeIdx !== -1 && row[typeIdx] ? row[typeIdx].trim().toLowerCase() : '';
           const type: ClassType = rawType.includes('offline') ? 'Offline' : 'Online';
@@ -323,6 +381,8 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
             phone,
             email,
             timing,
+            weekdayTiming,
+            weekendTiming,
             course,
             doj,
             mode,
@@ -367,13 +427,23 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
 
   // --- UPCOMING CLASSES CALCULATION ---
   const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+  const todayStr = currentTime.toISOString().split('T')[0];
+  const isWeekendToday = checkIsWeekend(todayStr);
+  const todayBatchMode = getDayMode(todayStr);
 
   const timedClasses = useMemo(() => {
-    return ongoingStudents.map(student => {
-      const range = parseClassRange(student.timing);
+    // Only students who have classes conducted today are monitored for active/upcoming alerts
+    const scheduledToday = ongoingStudents.filter(s => isStudentScheduledOnDate(s, todayStr));
+
+    return scheduledToday.map(student => {
+      const todayOverride = student.tempTimingOverrides?.[todayStr];
+      const effectiveTiming = getStudentEffectiveTiming(student, todayStr);
+      const range = parseClassRange(effectiveTiming);
       if (!range) {
         return {
           student,
+          effectiveTiming,
+          isOverride: !!todayOverride,
           startMin: 540, // default 9:00 AM
           endMin: 630,
           status: 'upcoming' as const,
@@ -386,6 +456,8 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
       if (currentMinutes >= startMin && currentMinutes <= endMin) {
         return {
           student,
+          effectiveTiming,
+          isOverride: !!todayOverride,
           startMin,
           endMin,
           status: 'in_progress' as const,
@@ -394,9 +466,11 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
         };
       } else if (startMin > currentMinutes) {
         const diff = startMin - currentMinutes;
-        const label = diff <= 60 ? `Starts in ${diff}m` : `Starts at ${student.timing.split(/[-–]/)[0]?.trim() || student.timing}`;
+        const label = diff <= 60 ? `Starts in ${diff}m` : `Starts at ${effectiveTiming.split(/[-–]/)[0]?.trim() || effectiveTiming}`;
         return {
           student,
+          effectiveTiming,
+          isOverride: !!todayOverride,
           startMin,
           endMin,
           status: (diff <= 60 ? 'starting_soon' : 'upcoming') as 'starting_soon' | 'upcoming',
@@ -406,6 +480,8 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
       } else {
         return {
           student,
+          effectiveTiming,
+          isOverride: !!todayOverride,
           startMin,
           endMin,
           status: 'completed_today' as const,
@@ -421,7 +497,7 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
       }
       return a.startMin - b.startMin;
     });
-  }, [ongoingStudents, currentMinutes]);
+  }, [ongoingStudents, currentMinutes, todayStr]);
 
   const nextUpcoming = timedClasses.find(c => c.status === 'in_progress' || c.status === 'starting_soon' || c.status === 'upcoming');
 
@@ -432,9 +508,14 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
       std.course.toLowerCase().includes(searchTerm.toLowerCase()) ||
       std.phone.toLowerCase().includes(searchTerm.toLowerCase()) ||
       std.trainerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      std.timing.toLowerCase().includes(searchTerm.toLowerCase());
+      std.timing.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (std.weekdayTiming && std.weekdayTiming.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (std.weekendTiming && std.weekendTiming.toLowerCase().includes(searchTerm.toLowerCase()));
 
-    const matchesMode = modeFilter === 'ALL' || std.mode === modeFilter;
+    const matchesMode =
+      modeFilter === 'ALL' ||
+      (modeFilter === 'TODAY' && isStudentScheduledOnDate(std, todayStr)) ||
+      std.mode === modeFilter;
     const matchesType = typeFilter === 'ALL' || std.type === typeFilter;
 
     return matchesSearch && matchesMode && matchesType;
@@ -526,10 +607,17 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
           <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-400/30">
                 <Clock className="w-3.5 h-3.5" />
                 Live Schedule Reminder
+              </span>
+              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                isWeekendToday
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-400/30'
+                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+              }`}>
+                {todayBatchMode} Batches Conducted Today
               </span>
               <span className="text-xs text-slate-400 font-mono">
                 Current Time:{' '}
@@ -565,7 +653,7 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
                 <div className="text-xs text-slate-300 flex items-center gap-3 mt-1 flex-wrap">
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-blue-400" />
-                    <strong>Timing:</strong> {nextUpcoming.student.timing}
+                    <strong>Timing:</strong> {nextUpcoming.effectiveTiming}
                   </span>
                   <span>•</span>
                   <span><strong>Mode:</strong> {nextUpcoming.student.mode} ({nextUpcoming.student.type})</span>
@@ -618,7 +706,7 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
               <span className="text-[10px] text-slate-500">Sorted chronologically</span>
             </div>
             <div className="flex items-center gap-2.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-slate-600">
-              {timedClasses.map(({ student, status, label }) => (
+              {timedClasses.map(({ student, effectiveTiming, status, label }) => (
                 <div
                   key={student.id}
                   className={`shrink-0 px-3 py-2 rounded-lg text-xs border min-w-[210px] transition-all ${
@@ -649,7 +737,7 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
                   </div>
                   <div className="text-[11px] text-slate-300 mt-1 flex items-center gap-1 font-mono">
                     <Clock className="w-3 h-3 text-blue-400" />
-                    <span>{student.timing}</span>
+                    <span>{effectiveTiming}</span>
                   </div>
                   <div className="text-[10px] text-slate-400 truncate mt-0.5">
                     {student.course} • {student.mode}
@@ -681,15 +769,21 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Batch Mode</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-semibold text-slate-600">Batch Mode</label>
+              <span className="text-[10px] text-slate-400">
+                Today: <strong className="text-[#0a6ed1]">{todayBatchMode}</strong>
+              </span>
+            </div>
             <select
               value={modeFilter}
               onChange={e => setModeFilter(e.target.value)}
               className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
             >
               <option value="ALL">All Modes (Weekdays & Weekend)</option>
-              <option value="Weekdays">Weekdays</option>
-              <option value="Weekend">Weekend</option>
+              <option value="TODAY">🎯 Today's Scheduled Batches ({todayBatchMode})</option>
+              <option value="Weekdays">Weekdays Batches (Mon-Fri)</option>
+              <option value="Weekend">Weekend Batches (Sat-Sun)</option>
             </select>
           </div>
 
@@ -964,10 +1058,50 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
 
                       {/* Timing */}
                       <td className="py-3 px-3 text-slate-800 font-medium">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-800 text-[11px] font-mono border border-slate-200">
-                          <Clock className="w-3 h-3 mr-1 text-[#0a6ed1]" />
-                          {student.timing || '09:00 AM - 10:30 AM'}
-                        </span>
+                        {(() => {
+                          const todayOverride = student.tempTimingOverrides?.[todayStr];
+                          const effectiveTiming = getStudentEffectiveTiming(student, todayStr);
+
+                          return (
+                            <div className="space-y-1">
+                              {todayOverride ? (
+                                <div className="space-y-0.5">
+                                  <span
+                                    className="inline-flex items-center px-2 py-0.5 rounded bg-amber-50 text-amber-900 text-[11px] font-mono border border-amber-300 font-bold"
+                                    title={`Reason: ${todayOverride.reason || 'Temporary timing change'}`}
+                                  >
+                                    <span className="text-amber-600 mr-1">⚡</span>
+                                    {todayOverride.timing}
+                                  </span>
+                                  <div className="text-[10px] text-slate-400 font-mono line-through">
+                                    Reg: {student.mode === 'Weekend' ? (student.weekendTiming || student.timing) : (student.weekdayTiming || student.timing)}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="space-y-0.5">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-800 text-[11px] font-mono border border-slate-200 font-medium">
+                                    <Clock className="w-3 h-3 mr-1 text-[#0a6ed1]" />
+                                    {effectiveTiming}
+                                  </span>
+                                  {student.weekdayTiming && student.weekendTiming && (
+                                    <div className="text-[9px] text-slate-400 font-mono space-y-0.5">
+                                      <div>WD: {student.weekdayTiming}</div>
+                                      <div>WE: {student.weekendTiming}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => openTempTimingModal(student)}
+                                className="block text-[10px] text-[#0a6ed1] hover:underline font-semibold cursor-pointer"
+                                title="Change or set temporary class timing for today"
+                              >
+                                {todayOverride ? 'Edit Temp Timing' : 'Change Timing'}
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Course */}
@@ -982,15 +1116,32 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
 
                       {/* Mode */}
                       <td className="py-3 px-3">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            student.mode === 'Weekdays'
-                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                              : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                          }`}
-                        >
-                          {student.mode}
-                        </span>
+                        {(() => {
+                          const isScheduledToday = isStudentScheduledOnDate(student, todayStr);
+                          const nextInfo = getStudentNextClassInfo(student, todayStr);
+                          return (
+                            <div className="space-y-1">
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                                  student.mode === 'Weekdays'
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                    : 'bg-purple-50 text-purple-700 border-purple-200'
+                                }`}
+                              >
+                                {student.mode} ({student.mode === 'Weekdays' ? 'Mon-Fri' : 'Sat-Sun'})
+                              </span>
+                              {isScheduledToday ? (
+                                <div className="text-[9px] text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded w-fit">
+                                  ● Class Today
+                                </div>
+                              ) : (
+                                <div className="text-[9px] text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.2 rounded w-fit" title={`Next class on ${nextInfo.dayName}`}>
+                                  Off-Day (Next: {nextInfo.dayName})
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Type */}
@@ -1496,6 +1647,134 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,Data Analyti
                 <span>Confirm Move</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TEMPORARY TIMING OVERRIDE */}
+      {tempTimingStudent && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center space-x-2 text-amber-600">
+                <Clock className="w-5 h-5 text-amber-500" />
+                <h3 className="text-base font-bold text-slate-900">
+                  Temporary Class Timing Change
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTempTimingStudent(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg text-xs space-y-1">
+              <div className="font-bold text-slate-800">
+                {tempTimingStudent.name} • <span className="font-normal text-slate-600">{tempTimingStudent.course}</span>
+              </div>
+              <div className="text-[11px] text-slate-600 flex items-center gap-2">
+                <span>Regular Batch Timing:</span>
+                <span className="font-mono font-semibold text-slate-800">{tempTimingStudent.timing}</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveTempTiming} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Target Date for Timing Change
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={tempDate}
+                  onChange={e => {
+                    const d = e.target.value;
+                    setTempDate(d);
+                    const existing = tempTimingStudent.tempTimingOverrides?.[d];
+                    if (existing) {
+                      setTempTimingInput(existing.timing);
+                      setTempReasonInput(existing.reason || '');
+                    }
+                  }}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded font-medium focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  New Temporary Timing for {tempDate} *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={tempTimingInput}
+                  onChange={e => setTempTimingInput(e.target.value)}
+                  placeholder="e.g. 11:00 AM - 12:30 PM"
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded font-mono font-semibold focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+
+                {/* Quick Presets */}
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {['09:00 AM - 10:30 AM', '11:00 AM - 12:30 PM', '02:00 PM - 03:30 PM', '04:00 PM - 05:30 PM', '06:00 PM - 07:30 PM'].map(preset => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setTempTimingInput(preset)}
+                      className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                    >
+                      {preset.split('-')[0].trim()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Reason / Memo (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={tempReasonInput}
+                  onChange={e => setTempReasonInput(e.target.value)}
+                  placeholder="e.g. Student requested postponement, extra revision batch"
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                {tempTimingStudent.tempTimingOverrides?.[tempDate] ? (
+                  <button
+                    type="button"
+                    onClick={() => handleClearTempTiming(tempDate)}
+                    className="text-xs text-rose-600 hover:text-rose-800 font-semibold cursor-pointer"
+                  >
+                    Reset to Regular Timing
+                  </button>
+                ) : (
+                  <div></div>
+                )}
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setTempTimingStudent(null)}
+                    className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-semibold cursor-pointer text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold shadow-xs cursor-pointer text-xs flex items-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Apply Timing</span>
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}

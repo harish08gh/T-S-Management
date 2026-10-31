@@ -82,7 +82,7 @@ export class DataService {
 
   private listeners: Set<() => void> = new Set();
   public isFirestoreConnected: boolean = false;
-  public connectionStatusText: string = 'Firebase Ready (pps-sw)';
+  public connectionStatusText: string = 'System Ready';
 
   private constructor() {
     this.initLocalData();
@@ -133,19 +133,19 @@ export class DataService {
             saveLocal(STORAGE_KEYS.STUDENTS, list);
           }
           this.isFirestoreConnected = true;
-          this.connectionStatusText = 'Firebase Live (pps-sw)';
+          this.connectionStatusText = 'Cloud Synced';
           this.notify();
         },
         error => {
           console.warn('[Firestore] Students listener note:', error.message);
           this.isFirestoreConnected = true;
-          this.connectionStatusText = 'Firebase Cloud Synced (pps-sw)';
+          this.connectionStatusText = 'Cloud Synced';
           this.notify();
         }
       );
     } catch (err: unknown) {
       console.warn('[Firebase] Fallback to persistent local cache:', err);
-      this.connectionStatusText = 'Firebase Ready (Local Storage mode)';
+      this.connectionStatusText = 'Cache Ready';
       this.notify();
     }
   }
@@ -264,6 +264,32 @@ export class DataService {
     } else {
       delete student.irregularReason;
     }
+
+    await this.saveStudent(student);
+  }
+
+  public async setStudentTempTiming(id: string, date: string, timing: string, reason?: string): Promise<void> {
+    const student = this.students.find(s => s.id === id);
+    if (!student) return;
+
+    const currentOverrides = { ...(student.tempTimingOverrides || {}) };
+    currentOverrides[date] = {
+      timing,
+      reason: reason || 'Temporary timing change for the session',
+      setAt: new Date().toISOString()
+    };
+    student.tempTimingOverrides = currentOverrides;
+
+    await this.saveStudent(student);
+  }
+
+  public async removeStudentTempTiming(id: string, date: string): Promise<void> {
+    const student = this.students.find(s => s.id === id);
+    if (!student || !student.tempTimingOverrides) return;
+
+    const currentOverrides = { ...student.tempTimingOverrides };
+    delete currentOverrides[date];
+    student.tempTimingOverrides = currentOverrides;
 
     await this.saveStudent(student);
   }

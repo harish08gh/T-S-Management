@@ -41,7 +41,21 @@ const DEFAULT_TRAINER_SETTINGS: TrainerSystemSettings = {
   institutionWebsite: 'https://pps-sw.com',
   defaultLinkDuration: 'entire_day',
   minAttendancePercentForCompletion: 80,
-  irregularThresholdDays: 3
+  irregularThresholdDays: 3,
+  weekOffDays: ['Sunday'],
+  lunchBreak: {
+    start: '01:00 PM',
+    end: '02:00 PM'
+  },
+  leaves: [],
+  shiftTimingWeekday: {
+    start: '09:00 AM',
+    end: '06:00 PM'
+  },
+  shiftTimingWeekend: {
+    start: '10:00 AM',
+    end: '04:00 PM'
+  }
 };
 
 interface AuthSession {
@@ -64,7 +78,17 @@ export default function App() {
   const [systemSettings, setSystemSettings] = useState<TrainerSystemSettings>(() => {
     try {
       const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
-      return stored ? JSON.parse(stored) : DEFAULT_TRAINER_SETTINGS;
+      if (!stored) return DEFAULT_TRAINER_SETTINGS;
+      const parsed = JSON.parse(stored);
+      return {
+        ...DEFAULT_TRAINER_SETTINGS,
+        ...parsed,
+        weekOffDays: parsed.weekOffDays || DEFAULT_TRAINER_SETTINGS.weekOffDays,
+        lunchBreak: parsed.lunchBreak || DEFAULT_TRAINER_SETTINGS.lunchBreak,
+        leaves: parsed.leaves || DEFAULT_TRAINER_SETTINGS.leaves,
+        shiftTimingWeekday: parsed.shiftTimingWeekday || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekday,
+        shiftTimingWeekend: parsed.shiftTimingWeekend || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekend,
+      };
     } catch {
       return DEFAULT_TRAINER_SETTINGS;
     }
@@ -401,7 +425,9 @@ export default function App() {
                 onQuickMarkAttendance={handleQuickMarkAttendance}
                 onQuickUpdateCompletion={handleQuickUpdateCompletion}
                 onOpenClassLinkModal={() => setIsClassLinkModalOpen(true)}
+                onSaveStudent={handleSaveStudent}
                 todayStr={todayStr}
+                settings={systemSettings}
               />
             )}
 
@@ -426,6 +452,7 @@ export default function App() {
                 onRecordAttendance={handleRecordAttendance}
                 onUpdateTopic={handleUpdateTopic}
                 todayStr={todayStr}
+                settings={systemSettings}
               />
             )}
 
@@ -534,12 +561,6 @@ export default function App() {
             <span>{systemSettings.institutionName}</span>
           </div>
           <div className="flex items-center space-x-4 text-[11px] text-slate-400">
-            {role === 'trainer' && (
-              <>
-                <span>Database: <strong className="font-mono text-slate-600">pps-sw</strong></span>
-                <span>•</span>
-              </>
-            )}
             <button
               onClick={handleLogout}
               className="text-rose-600 hover:underline font-semibold cursor-pointer"
