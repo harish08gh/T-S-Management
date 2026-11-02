@@ -97,8 +97,25 @@ export class DataService {
   }
 
   private initLocalData() {
-    this.students = loadLocal<Student[]>(STORAGE_KEYS.STUDENTS, INITIAL_STUDENTS);
-    this.demos = loadLocal<DemoStudent[]>(STORAGE_KEYS.DEMOS, INITIAL_DEMO_STUDENTS);
+    const loadedStudents = loadLocal<Student[]>(STORAGE_KEYS.STUDENTS, INITIAL_STUDENTS);
+    if (!loadedStudents || loadedStudents.length === 0 || !loadedStudents.some(s => s.id === 'irr-9')) {
+      const existingMap = new Map((loadedStudents || []).map(s => [s.id, s]));
+      INITIAL_STUDENTS.forEach(s => {
+        if (!existingMap.has(s.id)) existingMap.set(s.id, s);
+      });
+      this.students = Array.from(existingMap.values());
+      saveLocal(STORAGE_KEYS.STUDENTS, this.students);
+    } else {
+      this.students = loadedStudents;
+    }
+    const loadedDemos = loadLocal<DemoStudent[]>(STORAGE_KEYS.DEMOS, INITIAL_DEMO_STUDENTS);
+    // Ensure all 17 demo students are loaded
+    if (!loadedDemos || loadedDemos.length === 0 || !loadedDemos.some(d => d.id === 'demo-17')) {
+      this.demos = INITIAL_DEMO_STUDENTS;
+      saveLocal(STORAGE_KEYS.DEMOS, INITIAL_DEMO_STUDENTS);
+    } else {
+      this.demos = loadedDemos;
+    }
     this.attendance = loadLocal<AttendanceRecord[]>(STORAGE_KEYS.ATTENDANCE, INITIAL_ATTENDANCE);
     this.classLink = loadLocal<ClassLink>(STORAGE_KEYS.CLASS_LINK, INITIAL_CLASS_LINK);
     this.completionSettings = loadLocal<CourseCompletionSettings>(

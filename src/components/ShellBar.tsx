@@ -9,7 +9,8 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
-  LogOut
+  LogOut,
+  Menu
 } from 'lucide-react';
 import { UserRole, Student } from '../types';
 
@@ -25,6 +26,7 @@ interface ShellBarProps {
   pendingAttendanceCount: number;
   irregularCount: number;
   onLogout: () => void;
+  onToggleSidebar?: () => void;
 }
 
 export const ShellBar: React.FC<ShellBarProps> = ({
@@ -38,14 +40,25 @@ export const ShellBar: React.FC<ShellBarProps> = ({
   onRefreshData,
   pendingAttendanceCount,
   irregularCount,
-  onLogout
+  onLogout,
+  onToggleSidebar
 }) => {
   return (
     <header className="fiori-shell sticky top-0 z-40 text-white shadow-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14">
           {/* Left Brand & App Title */}
           <div className="flex items-center space-x-3">
+            {currentRole === 'trainer' && onToggleSidebar && (
+              <button
+                type="button"
+                onClick={onToggleSidebar}
+                className="p-1.5 rounded-md hover:bg-slate-700/60 text-slate-200 hover:text-white transition-colors cursor-pointer mr-1"
+                title="Toggle Navigation Sidebar"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
             <div className="w-9 h-9 rounded bg-[#0a6ed1] flex items-center justify-center shadow-inner font-bold text-white text-lg tracking-wider border border-blue-400/40">
               <GraduationCap className="w-5 h-5" />
             </div>

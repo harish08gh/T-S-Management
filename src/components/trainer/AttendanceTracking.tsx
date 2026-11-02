@@ -226,6 +226,23 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
     });
   }, [ongoingStudents, monthWiseRecords]);
 
+  // Scheduled students for the selected single date (Mon-Fri -> Weekdays, Sat-Sun -> Weekend)
+  const scheduledStudentsForDate = useMemo(() => {
+    return ongoingStudents.filter(s => isStudentScheduledOnDate(s, singleDate));
+  }, [ongoingStudents, singleDate]);
+
+  const scheduledPresentCount = useMemo(() => {
+    return scheduledStudentsForDate.filter(s => {
+      const rec = dailyRecordsMap.get(s.id);
+      return rec && rec.attendance === 'Present';
+    }).length;
+  }, [scheduledStudentsForDate, dailyRecordsMap]);
+
+  const scheduledAbsentCount = Math.max(0, scheduledStudentsForDate.length - scheduledPresentCount);
+  const scheduledAttendancePct = scheduledStudentsForDate.length > 0
+    ? Math.round((scheduledPresentCount / scheduledStudentsForDate.length) * 100)
+    : 0;
+
   // Handlers
   const handleToggleDailyAttendance = (
     student: Student,
@@ -233,16 +250,18 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
     targetStatus: AttendanceStatus
   ) => {
     const existing = dailyRecordsMap.get(student.id);
+    const effectiveTiming = getStudentEffectiveTiming(student, singleDate);
+    const isScheduled = isStudentScheduledOnDate(student, singleDate);
     const newRecord: AttendanceRecord = {
       id: existing ? existing.id : `att-${Date.now()}-${student.id}`,
       studentId: student.id,
       studentName: student.name,
       course: student.course,
       date: singleDate,
-      time: existing ? existing.time : (student.timing ? student.timing.split('-')[0].trim() : '09:00 AM'),
+      time: existing ? existing.time : (effectiveTiming ? effectiveTiming.split(/[-–]/)[0].trim() : '09:00 AM'),
       attendance: targetStatus,
       topicCovered: existing ? existing.topicCovered : (batchTopicInput || 'Curriculum Session'),
-      markedBy: 'Trainer (Attendance Page)',
+      markedBy: isScheduled ? 'Trainer (Attendance Page)' : 'Trainer (Extra/Off-Day Session)',
       markedAt: new Date().toISOString()
     };
     onRecordAttendance(newRecord);
@@ -253,16 +272,18 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
     if (existing) {
       onUpdateTopic(existing.id, editingTopicText);
     } else {
+      const effectiveTiming = getStudentEffectiveTiming(student, singleDate);
+      const isScheduled = isStudentScheduledOnDate(student, singleDate);
       const newRecord: AttendanceRecord = {
         id: `att-${Date.now()}-${student.id}`,
         studentId: student.id,
         studentName: student.name,
         course: student.course,
         date: singleDate,
-        time: student.timing ? student.timing.split('-')[0].trim() : '09:00 AM',
+        time: effectiveTiming ? effectiveTiming.split(/[-–]/)[0].trim() : '09:00 AM',
         attendance: 'Present',
         topicCovered: editingTopicText,
-        markedBy: 'Trainer (Attendance Page)',
+        markedBy: isScheduled ? 'Trainer (Attendance Page)' : 'Trainer (Extra/Off-Day Session)',
         markedAt: new Date().toISOString()
       };
       onRecordAttendance(newRecord);
@@ -272,18 +293,25 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
 
   const handleApplyBatchTopic = () => {
     if (!batchTopicInput.trim()) return;
-    ongoingStudents.forEach(std => {
+    // Strictly apply batch topic to students scheduled for this date
+    const targetStudents = scheduledStudentsForDate.length > 0
+      ? scheduledStudentsForDate
+      : ongoingStudents;
+
+    targetStudents.forEach(std => {
       const existing = dailyRecordsMap.get(std.id);
+      const effectiveTiming = getStudentEffectiveTiming(std, singleDate);
+      const isScheduled = isStudentScheduledOnDate(std, singleDate);
       const newRecord: AttendanceRecord = {
         id: existing ? existing.id : `att-${Date.now()}-${std.id}`,
         studentId: std.id,
         studentName: std.name,
         course: std.course,
         date: singleDate,
-        time: existing ? existing.time : (std.timing ? std.timing.split('-')[0].trim() : '09:00 AM'),
+        time: existing ? existing.time : (effectiveTiming ? effectiveTiming.split(/[-–]/)[0].trim() : '09:00 AM'),
         attendance: existing ? existing.attendance : 'Present',
         topicCovered: batchTopicInput,
-        markedBy: 'Trainer (Attendance Page)',
+        markedBy: isScheduled ? 'Trainer (Attendance Page)' : 'Trainer (Extra/Off-Day Session)',
         markedAt: new Date().toISOString()
       };
       onRecordAttendance(newRecord);
@@ -292,7 +320,12 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
   };
 
   const handleMarkAllPresentDaily = () => {
-    ongoingStudents.forEach(std => {
+    // Strictly mark all students scheduled for this date as Present
+    const targetStudents = scheduledStudentsForDate.length > 0
+      ? scheduledStudentsForDate
+      : ongoingStudents;
+
+    targetStudents.forEach(std => {
       handleToggleDailyAttendance(std, 'Absent', 'Present');
     });
   };
@@ -374,17 +407,19 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
               <>
                 <button
                   onClick={() => setShowBatchTopic(!showBatchTopic)}
-                  className="px-3 py-1.5 bg-blue-50 text-[#0a6ed1] hover:bg-blue-100 border border-blue-200 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  className="px-3 py-1.5 bg-blue-50 text-[#0a6ed1] hover:bg-blue-100 border border-blue-200 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title={`Apply topic to students scheduled for ${singleDate}`}
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Fill Topic for All</span>
+                  <span>Fill Topic ({scheduledStudentsForDate.length} Scheduled)</span>
                 </button>
                 <button
                   onClick={handleMarkAllPresentDaily}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                  title={`Mark present all ${scheduledStudentsForDate.length} students scheduled for ${singleDate}`}
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Mark All Present</span>
+                  <span>Mark All Present ({scheduledStudentsForDate.length})</span>
                 </button>
               </>
             )}
@@ -673,6 +708,74 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
               </span>
             </div>
           )}
+
+          {/* Daily Schedule & Attendance KPI Ribbon */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-white border border-[#d9e0e7] rounded-lg p-3 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                  Scheduled Today
+                </span>
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                  {singleDateDayName.slice(0, 3)} • {singleDateMode}
+                </span>
+              </div>
+              <div className="text-xl font-bold text-[#1d2d3e] mt-1">
+                {scheduledStudentsForDate.length}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {singleDateMode === 'Weekdays' ? 'Monday–Friday batches' : 'Saturday–Sunday batches'}
+              </p>
+            </div>
+
+            <div className="bg-white border border-[#d9e0e7] rounded-lg p-3 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                  Present Marked
+                </span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="text-xl font-bold text-emerald-700 mt-1">
+                {scheduledPresentCount}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Out of {scheduledStudentsForDate.length} scheduled attendees
+              </p>
+            </div>
+
+            <div className="bg-white border border-[#d9e0e7] rounded-lg p-3 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                  Absent / Pending
+                </span>
+                <XCircle className="w-4 h-4 text-rose-500" />
+              </div>
+              <div className="text-xl font-bold text-rose-700 mt-1">
+                {scheduledAbsentCount}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Pending verification or missed session
+              </p>
+            </div>
+
+            <div className="bg-white border border-[#d9e0e7] rounded-lg p-3 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                  Attendance Rate
+                </span>
+                <TrendingUp className="w-4 h-4 text-[#0a6ed1]" />
+              </div>
+              <div className="text-xl font-bold text-[#0a6ed1] mt-1">
+                {scheduledAttendancePct}%
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1.5 overflow-hidden">
+                <div
+                  className="bg-[#0a6ed1] h-full rounded-full transition-all"
+                  style={{ width: `${scheduledAttendancePct}%` }}
+                />
+              </div>
+            </div>
+          </div>
 
           <div className="bg-white border border-[#d9e0e7] rounded-lg shadow-xs overflow-hidden">
           <div className="overflow-x-auto">

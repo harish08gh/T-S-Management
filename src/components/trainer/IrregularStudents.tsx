@@ -88,21 +88,22 @@ export const IrregularStudents: React.FC<IrregularStudentsProps> = ({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="fiori-table-header">
-                <th className="py-3 px-3 w-12 text-center">S.No</th>
+                <th className="py-3 px-3 w-10 text-center">#</th>
                 <th className="py-3 px-3 min-w-[150px]">Student Name</th>
-                <th className="py-3 px-3 min-w-[120px]">Contact Info</th>
-                <th className="py-3 px-3 min-w-[180px]">Course</th>
+                <th className="py-3 px-3 min-w-[130px]">Contact No</th>
                 <th className="py-3 px-3 min-w-[110px]">Batch Timing</th>
-                <th className="py-3 px-3 min-w-[100px]">Progress</th>
-                <th className="py-3 px-3 min-w-[110px]">Last Attended</th>
-                <th className="py-3 px-3 min-w-[240px]">Reason for Irregularity</th>
-                <th className="py-3 px-3 min-w-[140px] text-center">Actions</th>
+                <th className="py-3 px-3 min-w-[140px]">Course</th>
+                <th className="py-3 px-3 min-w-[100px]">Date (DD/MM/YYYY)</th>
+                <th className="py-3 px-3 min-w-[130px]">Mode & Type</th>
+                <th className="py-3 px-3 min-w-[90px]">Progress</th>
+                <th className="py-3 px-3 min-w-[220px]">Remarks / Reason</th>
+                <th className="py-3 px-3 min-w-[130px] text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#eef2f6]">
               {filteredStudents.length > 0 ? (
                 filteredStudents.map((std, index) => (
-                  <tr key={std.id} className="fiori-table-row bg-rose-50/20">
+                  <tr key={std.id} className="fiori-table-row bg-rose-50/20 hover:bg-rose-50/40 transition-colors">
                     <td className="py-3 px-3 text-center font-mono text-slate-500 font-medium">
                       {index + 1}
                     </td>
@@ -112,44 +113,61 @@ export const IrregularStudents: React.FC<IrregularStudentsProps> = ({
                         Irregular
                       </span>
                     </td>
-                    <td className="py-3 px-3 font-mono text-slate-600 whitespace-nowrap">
-                      <div>{std.phone}</div>
-                      <div className="text-[10px] text-slate-400 font-sans">{std.email}</div>
+                    <td className="py-3 px-3 font-mono text-slate-700 text-xs">
+                      <div className="font-semibold whitespace-pre-line">{std.phone}</div>
                     </td>
-                    <td className="py-3 px-3 font-medium text-slate-700">
-                      {std.course}
-                    </td>
-                    <td className="py-3 px-3 font-mono text-slate-600 whitespace-nowrap">
+                    <td className="py-3 px-3 font-mono text-slate-800 whitespace-nowrap font-medium">
                       {std.timing}
                     </td>
+                    <td className="py-3 px-3 font-medium text-slate-800">
+                      {std.course}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-slate-700 whitespace-nowrap font-semibold">
+                      {std.doj}
+                    </td>
                     <td className="py-3 px-3 whitespace-nowrap">
-                      <span className="font-bold text-slate-700">{std.completionPercentage}%</span>
-                      <div className="w-16 bg-slate-200 rounded-full h-1 mt-1">
+                      <div className="flex flex-col gap-1">
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border inline-block w-fit ${
+                          std.mode === 'Weekend'
+                            ? 'bg-purple-50 text-purple-700 border-purple-200'
+                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                        }`}>
+                          {std.mode}
+                        </span>
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border inline-block w-fit ${
+                          std.type === 'Online'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}>
+                          {std.type}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 whitespace-nowrap">
+                      <span className="font-bold text-slate-800">{std.completionPercentage}%</span>
+                      <div className="w-16 bg-slate-200 rounded-full h-1.5 mt-1 overflow-hidden">
                         <div
-                          className="bg-amber-500 h-1 rounded-full"
+                          className="bg-amber-500 h-1.5 rounded-full"
                           style={{ width: `${std.completionPercentage}%` }}
                         ></div>
                       </div>
                     </td>
-                    <td className="py-3 px-3 font-mono text-slate-600 whitespace-nowrap">
-                      {std.lastActiveDate || 'Unknown'}
-                    </td>
-                    <td className="py-3 px-3 text-rose-900 bg-rose-50/50 rounded p-2 text-xs">
-                      {std.irregularReason || 'Marked as irregular by trainer'}
+                    <td className="py-3 px-3 text-rose-900 bg-rose-50/60 rounded p-2 text-xs leading-relaxed font-medium">
+                      {std.remark || std.irregularReason || 'Marked as irregular by trainer'}
                     </td>
                     <td className="py-3 px-3 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center space-x-2">
                         <button
                           onClick={() => onReactivateStudent(std.id)}
-                          className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors"
+                          className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
                           title="Restore student to active Class Schedule"
                         >
                           <RotateCcw className="w-3 h-3" />
                           <span>Make Regular</span>
                         </button>
                         <a
-                          href={`tel:${std.phone}`}
-                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-200 transition-colors"
+                          href={`tel:${std.phone.replace(/[^0-9]/g, '')}`}
+                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-200 transition-colors cursor-pointer"
                           title="Call Student"
                         >
                           <Phone className="w-3.5 h-3.5" />
@@ -160,7 +178,7 @@ export const IrregularStudents: React.FC<IrregularStudentsProps> = ({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={9} className="py-10 text-center text-slate-400">
+                  <td colSpan={10} className="py-10 text-center text-slate-400">
                     No irregular students found. All students are attending regularly!
                   </td>
                 </tr>

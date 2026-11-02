@@ -1,7 +1,7 @@
 export type StudentStatus = 'Ongoing' | 'Demo' | 'Completed';
 export type ClassMode = 'Weekdays' | 'Weekend';
 export type ClassType = 'Online' | 'Offline';
-export type DemoStatus = 'Converted' | 'Not Converted' | 'Pending';
+export type DemoStatus = 'Converted' | 'Not Converted' | 'Pending' | 'Waiting' | 'Not Responded';
 export type AttendanceStatus = 'Present' | 'Absent';
 
 export interface TemporaryTimingOverride {
@@ -62,7 +62,7 @@ export interface AttendanceRecord {
   time: string;
   attendance: AttendanceStatus;
   topicCovered: string; // fillable by trainer
-  markedBy: 'Student (Touch Link)' | 'Trainer (Dashboard)' | 'Trainer (Attendance Page)';
+  markedBy: 'Student (Touch Link)' | 'Trainer (Dashboard)' | 'Trainer (Attendance Page)' | 'Trainer (Extra/Off-Day Session)';
   markedAt: string;
 }
 

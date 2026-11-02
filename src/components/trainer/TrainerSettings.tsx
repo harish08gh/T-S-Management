@@ -97,11 +97,35 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
     setFormData({ ...formData, leaves: updatedLeaves });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Sync formData whenever settings prop updates
+  React.useEffect(() => {
+    setFormData({
+      ...settings,
+      weekOffDays: settings.weekOffDays || ['Sunday'],
+      lunchBreak: settings.lunchBreak || { start: '01:00 PM', end: '02:00 PM' },
+      leaves: settings.leaves || [],
+      shiftTimingWeekday: settings.shiftTimingWeekday || { start: '09:00 AM', end: '06:00 PM' },
+      shiftTimingWeekend: settings.shiftTimingWeekend || { start: '10:00 AM', end: '04:00 PM' }
+    });
+  }, [settings]);
+
+  const handleSave = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!formData.trainerPassword?.trim()) {
+      alert('Trainer password cannot be empty.');
+      return;
+    }
+    if (!formData.studentPassword?.trim()) {
+      alert('Student default password cannot be empty.');
+      return;
+    }
+    if (!formData.institutionName?.trim()) {
+      alert('Institution name cannot be empty.');
+      return;
+    }
     onSaveSettings(formData);
     setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+    setTimeout(() => setSaveSuccess(false), 3500);
   };
 
   // Full Database JSON Backup
@@ -145,16 +169,26 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
             </p>
           </div>
 
-          {saveSuccess && (
-            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-md text-xs font-semibold">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Settings Saved Successfully!</span>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {saveSuccess && (
+              <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-md text-xs font-semibold animate-in fade-in duration-200">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Settings Saved Successfully!</span>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => handleSave()}
+              className="px-5 py-2 bg-[#0a6ed1] hover:bg-[#0854a0] text-white rounded-md text-xs font-bold shadow-xs flex items-center gap-2 cursor-pointer transition-colors"
+            >
+              <Save className="w-4 h-4" />
+              <span>Save Settings</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSave} className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Card 1: Trainer Profile & Credentials */}
           <div className="bg-white border border-[#d9e0e7] rounded-lg p-5 shadow-xs space-y-4">
@@ -711,13 +745,22 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
           <span className="text-xs text-slate-500">
             Changes to credentials and policies will take effect immediately.
           </span>
-          <button
-            type="submit"
-            className="px-6 py-2.5 bg-[#0a6ed1] hover:bg-[#0854a0] text-white rounded text-xs font-bold shadow-md flex items-center gap-2 cursor-pointer transition-colors"
-          >
-            <Save className="w-4 h-4" />
-            <span>Save All Settings</span>
-          </button>
+          <div className="flex items-center gap-3">
+            {saveSuccess && (
+              <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Saved!</span>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => handleSave()}
+              className="px-6 py-2.5 bg-[#0a6ed1] hover:bg-[#0854a0] text-white rounded text-xs font-bold shadow-md flex items-center gap-2 cursor-pointer transition-colors"
+            >
+              <Save className="w-4 h-4" />
+              <span>Save All Settings</span>
+            </button>
+          </div>
         </div>
       </form>
     </div>

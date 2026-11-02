@@ -11,7 +11,7 @@ import {
   TrainerTab
 } from './types';
 import { ShellBar } from './components/ShellBar';
-import { NavigationTabBar } from './components/NavigationTabBar';
+import { SidebarNavigation } from './components/SidebarNavigation';
 import { Dashboard } from './components/trainer/Dashboard';
 import { StudentDetails } from './components/trainer/StudentDetails';
 import { DemoManagement } from './components/trainer/DemoManagement';
@@ -96,6 +96,23 @@ export default function App() {
 
   const [role, setRole] = useState<UserRole>(authSession?.role || 'trainer');
   const [trainerTab, setTrainerTab] = useState<TrainerTab>('dashboard');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('pps_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebarCollapse = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('pps_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Data state synced from DataService
   const [students, setStudents] = useState<Student[]>(dataService.getStudents());

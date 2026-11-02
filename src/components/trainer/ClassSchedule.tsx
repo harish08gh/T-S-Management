@@ -76,6 +76,20 @@ function parseClassRange(timingStr: string): { startMin: number; endMin: number 
   return { startMin, endMin };
 }
 
+// Generates normalized slot keys for conflict & same-time detection
+function getStudentSlotKeys(timing: string, mode: string): string[] {
+  if (!timing || !timing.trim()) return [];
+  const parts = timing.split(',');
+  return parts.map(p => {
+    const trimmed = p.trim();
+    const range = parseClassRange(trimmed);
+    if (range) {
+      return `${mode.toLowerCase()}_${range.startMin}_${range.endMin}`;
+    }
+    return `${mode.toLowerCase()}_${trimmed.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+  }).filter(Boolean);
+}
+
 export const ClassSchedule: React.FC<ClassScheduleProps> = ({
   ongoingStudents,
   onSaveStudent,
@@ -90,6 +104,7 @@ export const ClassSchedule: React.FC<ClassScheduleProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [modeFilter, setModeFilter] = useState<string>('ALL');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
+  const [sameTimeFilter, setSameTimeFilter] = useState<'ALL' | 'SAME_TIME'>('ALL');
 
   // Real-time clock for upcoming class reminder
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -499,6 +514,40 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,11:00 AM - 1
     });
   }, [ongoingStudents, currentMinutes, todayStr]);
 
+  // Map of slotKey -> Student[] for conflict & same-time detection (2 or more members in same time)
+  const timingSharingMap = useMemo(() => {
+    const map = new Map<string, Student[]>();
+    ongoingStudents.forEach(s => {
+      const keys = getStudentSlotKeys(s.timing || '', s.mode);
+      keys.forEach(k => {
+        if (!map.has(k)) map.set(k, []);
+        if (!map.get(k)!.some(existing => existing.id === s.id)) {
+          map.get(k)!.push(s);
+        }
+      });
+    });
+    return map;
+  }, [ongoingStudents]);
+
+  // Helper: returns other students who share the exact same time slot / overlap
+  const getSameTimePeers = (student: Student): Student[] => {
+    const keys = getStudentSlotKeys(student.timing || '', student.mode);
+    const peerMap = new Map<string, Student>();
+    keys.forEach(k => {
+      const list = timingSharingMap.get(k) || [];
+      list.forEach(other => {
+        if (other.id !== student.id) {
+          peerMap.set(other.id, other);
+        }
+      });
+    });
+    return Array.from(peerMap.values());
+  };
+
+  const totalSharedTimingStudentsCount = useMemo(() => {
+    return ongoingStudents.filter(s => getSameTimePeers(s).length > 0).length;
+  }, [ongoingStudents, timingSharingMap]);
+
   const nextUpcoming = timedClasses.find(c => c.status === 'in_progress' || c.status === 'starting_soon' || c.status === 'upcoming');
 
   // Filter table
@@ -517,8 +566,9 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,11:00 AM - 1
       (modeFilter === 'TODAY' && isStudentScheduledOnDate(std, todayStr)) ||
       std.mode === modeFilter;
     const matchesType = typeFilter === 'ALL' || std.type === typeFilter;
+    const matchesSameTime = sameTimeFilter === 'ALL' || getSameTimePeers(std).length > 0;
 
-    return matchesSearch && matchesMode && matchesType;
+    return matchesSearch && matchesMode && matchesType && matchesSameTime;
   });
 
   return (
@@ -799,8 +849,51 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,11:00 AM - 1
               <option value="Offline">Offline</option>
             </select>
           </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-semibold text-slate-600">Timing Overlap / Sharing</label>
+              {totalSharedTimingStudentsCount > 0 && (
+                <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-1.5 py-0.2 rounded border border-amber-300">
+                  {totalSharedTimingStudentsCount} in same slot
+                </span>
+              )}
+            </div>
+            <select
+              value={sameTimeFilter}
+              onChange={e => setSameTimeFilter(e.target.value as any)}
+              className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1] font-semibold"
+            >
+              <option value="ALL">All Schedules</option>
+              <option value="SAME_TIME">👥 Same Time Slots Only (2+ Members)</option>
+            </select>
+          </div>
         </div>
       </div>
+
+      {/* Same-Time Slot Alert Banner */}
+      {totalSharedTimingStudentsCount > 0 && (
+        <div className="bg-amber-50/90 border border-amber-300 rounded-lg p-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-amber-950 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full bg-amber-200 flex items-center justify-center text-amber-800 font-bold text-xs shrink-0">
+              👥
+            </div>
+            <div>
+              <span className="font-bold">Same Time Slots Highlighted: </span>
+              <span>
+                <strong>{totalSharedTimingStudentsCount} students</strong> share the exact same time slot with other members. Rows with overlapping class times are highlighted in amber.
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSameTimeFilter(sameTimeFilter === 'ALL' ? 'SAME_TIME' : 'ALL')}
+            className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline self-start sm:self-auto cursor-pointer"
+          >
+            {sameTimeFilter === 'ALL' ? 'Filter: Show Same-Time Slots Only' : 'Show All Students'}
+          </button>
+        </div>
+      )}
 
       {/* Table: Fully Editable Ongoing Student Schedule */}
       <div className="bg-white border border-[#d9e0e7] rounded-lg shadow-xs overflow-hidden">
@@ -1028,10 +1121,17 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,11:00 AM - 1
                     );
                   }
 
+                  const sameTimePeers = getSameTimePeers(student);
+                  const hasSameTime = sameTimePeers.length > 0;
+
                   return (
                     <tr
                       key={student.id}
-                      className="hover:bg-[#f8fafc] transition-colors group"
+                      className={`transition-colors group ${
+                        hasSameTime
+                          ? 'bg-amber-50/70 hover:bg-amber-100/70 border-l-4 border-l-amber-500'
+                          : 'hover:bg-[#f8fafc]'
+                      }`}
                     >
                       {/* S.No */}
                       <td className="py-3 px-3 text-center text-slate-600 font-mono">
@@ -1089,6 +1189,16 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,11:00 AM - 1
                                       <div>WE: {student.weekendTiming}</div>
                                     </div>
                                   )}
+                                </div>
+                              )}
+                              {hasSameTime && (
+                                <div className="pt-0.5">
+                                  <span
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs"
+                                    title={`Same time slot with ${sameTimePeers.length} other student(s): ${sameTimePeers.map(p => p.name).join(', ')}`}
+                                  >
+                                    <span>👥 Same Time ({sameTimePeers.length + 1} Members)</span>
+                                  </span>
                                 </div>
                               )}
                               <button

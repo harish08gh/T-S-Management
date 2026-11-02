@@ -644,8 +644,16 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   <span>Mark Attendance as PRESENT?</span>
                 </div>
                 <p className="text-[11px] text-emerald-700">
-                  Session Date: <strong>{todayStr}</strong> • Batch Time: <strong>{currentStudent.timing}</strong>
+                  Session Date: <strong>{todayStr}</strong> • Batch Time: <strong>{effectiveTimingToday || currentStudent.timing}</strong>
                 </p>
+                <div className="text-[10px] text-emerald-800 pt-1 border-t border-emerald-200/60 mt-1">
+                  Enrolled in <strong>{currentStudent.mode}</strong> batch ({currentStudent.mode === 'Weekdays' ? 'Mon–Fri schedule' : 'Sat–Sun schedule'}).
+                  {!isScheduledToday && (
+                    <span className="block text-amber-800 font-semibold mt-1 bg-amber-50 border border-amber-200 rounded p-1.5">
+                      Notice: Today is an off-day for your regular schedule. Touching this link will log attendance for this extra / makeup class session.
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="pt-2 flex justify-end space-x-2">

@@ -160,9 +160,10 @@ export const DemoManagement: React.FC<DemoManagementProps> = ({
   const handleDownloadTemplate = () => {
     const csvContent =
 `Name,Phone,Email,Date,Time,Course,Experience,Mode,TrainerName,Feedback,Status
-Rahul Verma,+91 91234 56789,rahul.v@example.com,2026-10-30,11:00 AM,Data Analytics with Python,Fresher,Online,PPSTrainer,Interested in weekend batch,Pending
-Ananya Patel,+91 98761 23456,ananya.p@example.com,2026-10-31,04:00 PM,Cloud & DevOps,2 Years,Offline,PPSTrainer,Satisfied with syllabus,Converted
-Suresh Kumar,+91 98450 99887,suresh@example.com,2026-11-02,06:00 PM,Full Stack Java,Fresher,Online,PPSTrainer,Needs evening timing,Pending`;
+Gokul,9585052446,gokul@example.com,2026-10-01,11:00 AM,SAP ABAP,Fresher,Online,HARISH,Interested In Joining,Converted
+Karthikeyan,8807412430,,2026-09-26,10:00 AM,SAP ABAP,Fresher,Online,HARISH,Interested In Joining,Waiting
+Rafeena,9789808922,,2026-09-10,04:00 PM,SAP ABAP,9 Years,Online,HARISH,Trying to switch product company,Not Converted
+Varsha Varthan,9441552881,,2026-09-02,06:00 PM,SAP ABAP,Fresher,Online,HARISH,Called multiple times,Not Responded`;
 
     downloadCSV('pps_demo_students_template.csv', csvContent);
   };
@@ -232,10 +233,14 @@ Suresh Kumar,+91 98450 99887,suresh@example.com,2026-11-02,06:00 PM,Full Stack J
 
           const rawStatus = statusIdx !== -1 && row[statusIdx] ? row[statusIdx].trim().toLowerCase() : '';
           let status: DemoStatus = 'Pending';
-          if (rawStatus.includes('converted') && !rawStatus.includes('not')) {
-            status = 'Converted';
-          } else if (rawStatus.includes('not converted')) {
+          if (rawStatus.includes('not converted')) {
             status = 'Not Converted';
+          } else if (rawStatus.includes('converted')) {
+            status = 'Converted';
+          } else if (rawStatus.includes('waiting')) {
+            status = 'Waiting';
+          } else if (rawStatus.includes('respond') || rawStatus.includes('not respond')) {
+            status = 'Not Responded';
           }
 
           parsed.push({
@@ -318,6 +323,20 @@ Suresh Kumar,+91 98450 99887,suresh@example.com,2026-11-02,06:00 PM,Full Stack J
             Not Converted
           </span>
         );
+      case 'Waiting':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-100 text-indigo-800 border border-indigo-200">
+            <Clock className="w-3 h-3 mr-1 text-indigo-600" />
+            Waiting
+          </span>
+        );
+      case 'Not Responded':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-300">
+            <XCircle className="w-3 h-3 mr-1 text-slate-500" />
+            Not Responded
+          </span>
+        );
       case 'Pending':
       default:
         return (
@@ -398,33 +417,34 @@ Suresh Kumar,+91 98450 99887,suresh@example.com,2026-11-02,06:00 PM,Full Stack J
       )}
 
       {/* KPI Tiles */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white border border-[#d9e0e7] rounded-lg p-4 shadow-xs">
+      {/* KPI Tiles */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="bg-white border border-[#d9e0e7] rounded-lg p-3.5 shadow-xs">
           <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
             Total Demos
           </div>
           <div className="text-2xl font-bold text-[#1d2d3e] mt-1">{demos.length}</div>
           <div className="text-[10px] text-slate-400 mt-0.5">Trial registrations</div>
         </div>
-        <div className="bg-white border border-[#d9e0e7] rounded-lg p-4 shadow-xs">
+        <div className="bg-white border border-[#d9e0e7] rounded-lg p-3.5 shadow-xs">
           <div className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider">
-            Converted to Batch
+            Converted
           </div>
           <div className="text-2xl font-bold text-emerald-700 mt-1">
             {demos.filter(d => d.status === 'Converted').length}
           </div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Enrolled in ongoing schedule</div>
+          <div className="text-[10px] text-slate-400 mt-0.5">Enrolled into batches</div>
         </div>
-        <div className="bg-white border border-[#d9e0e7] rounded-lg p-4 shadow-xs">
-          <div className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider">
-            Pending Trial / Decision
+        <div className="bg-white border border-[#d9e0e7] rounded-lg p-3.5 shadow-xs">
+          <div className="text-[11px] font-semibold text-indigo-600 uppercase tracking-wider">
+            Waiting
           </div>
-          <div className="text-2xl font-bold text-amber-700 mt-1">
-            {demos.filter(d => d.status === 'Pending').length}
+          <div className="text-2xl font-bold text-indigo-700 mt-1">
+            {demos.filter(d => d.status === 'Waiting').length}
           </div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Follow-up needed</div>
+          <div className="text-[10px] text-slate-400 mt-0.5">Interested / Follow-up</div>
         </div>
-        <div className="bg-white border border-[#d9e0e7] rounded-lg p-4 shadow-xs">
+        <div className="bg-white border border-[#d9e0e7] rounded-lg p-3.5 shadow-xs">
           <div className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider">
             Not Converted
           </div>
@@ -432,6 +452,15 @@ Suresh Kumar,+91 98450 99887,suresh@example.com,2026-11-02,06:00 PM,Full Stack J
             {demos.filter(d => d.status === 'Not Converted').length}
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">Did not enroll</div>
+        </div>
+        <div className="bg-white border border-[#d9e0e7] rounded-lg p-3.5 shadow-xs col-span-2 sm:col-span-1">
+          <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
+            Not Responded
+          </div>
+          <div className="text-2xl font-bold text-slate-700 mt-1">
+            {demos.filter(d => d.status === 'Not Responded' || d.status === 'Pending').length}
+          </div>
+          <div className="text-[10px] text-slate-400 mt-0.5">No response / Pending</div>
         </div>
       </div>
 
@@ -462,9 +491,11 @@ Suresh Kumar,+91 98450 99887,suresh@example.com,2026-11-02,06:00 PM,Full Stack J
               className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
             >
               <option value="ALL">All Statuses</option>
-              <option value="Pending">Pending Trial</option>
               <option value="Converted">Converted</option>
+              <option value="Waiting">Waiting</option>
               <option value="Not Converted">Not Converted</option>
+              <option value="Not Responded">Not Responded</option>
+              <option value="Pending">Pending Trial</option>
             </select>
           </div>
 
@@ -753,8 +784,10 @@ Suresh Kumar,+91 98450 99887,suresh@example.com,2026-11-02,06:00 PM,Full Stack J
                     className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
                   >
                     <option value="Pending">Pending Trial</option>
+                    <option value="Waiting">Waiting</option>
                     <option value="Converted">Converted</option>
                     <option value="Not Converted">Not Converted</option>
+                    <option value="Not Responded">Not Responded</option>
                   </select>
                 </div>
 
