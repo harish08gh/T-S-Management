@@ -410,15 +410,18 @@ export default function App() {
         pendingAttendanceCount={pendingAttendanceCount}
         irregularCount={irregularStudents.length}
         onLogout={handleLogout}
+        onToggleSidebar={toggleSidebarCollapse}
       />
 
       {/* Role: TRAINER PORTAL */}
       {role === 'trainer' && (
-        <>
-          {/* Sub Navigation Tab Bar */}
-          <NavigationTabBar
+        <div className="flex-1 flex overflow-hidden">
+          {/* Side Navigation Bar */}
+          <SidebarNavigation
             activeTab={trainerTab}
             onTabChange={setTrainerTab}
+            isCollapsed={isSidebarCollapsed}
+            onToggleCollapse={toggleSidebarCollapse}
             counts={{
               allStudents: students.length,
               ongoing: ongoingStudents.length,
@@ -430,7 +433,7 @@ export default function App() {
           />
 
           {/* Main Content Area */}
-          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <main className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6">
             {trainerTab === 'dashboard' && (
               <Dashboard
                 students={students}
@@ -523,7 +526,7 @@ export default function App() {
               />
             )}
           </main>
-        </>
+        </div>
       )}
 
       {/* Role: STUDENT PORTAL (Strictly for the authenticated student only) */}
