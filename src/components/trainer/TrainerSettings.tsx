@@ -46,6 +46,7 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
 }) => {
   const [formData, setFormData] = useState<TrainerSystemSettings>({
     ...settings,
+    trainerUsername: settings.trainerUsername || 'PPSTrainer',
     weekOffDays: settings.weekOffDays || ['Sunday'],
     lunchBreak: settings.lunchBreak || { start: '01:00 PM', end: '02:00 PM' },
     leaves: settings.leaves || [],
@@ -54,17 +55,19 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
   });
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // New leave entry state
   const [newLeaveDate, setNewLeaveDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [newLeaveReason, setNewLeaveReason] = useState<string>('Personal Leave');
 
   const handleToggleWeekOffDay = (day: string) => {
+    setErrorMessage(null);
     const current = formData.weekOffDays || [];
     let updated: string[];
     if (current.includes(day)) {
       if (current.length === 1) {
-        alert('At least one week off day should be designated.');
+        setErrorMessage('At least one week off day should be designated.');
         return;
       }
       updated = current.filter(d => d !== day);
@@ -76,10 +79,11 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
 
   const handleAddLeave = (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
     if (!newLeaveDate) return;
     const exists = (formData.leaves || []).some(l => l.date === newLeaveDate);
     if (exists) {
-      alert(`A leave record already exists for ${newLeaveDate}.`);
+      setErrorMessage(`A leave record already exists for ${newLeaveDate}.`);
       return;
     }
     const newLeave: TrainerLeave = {
@@ -101,6 +105,7 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
   React.useEffect(() => {
     setFormData({
       ...settings,
+      trainerUsername: settings.trainerUsername || 'PPSTrainer',
       weekOffDays: settings.weekOffDays || ['Sunday'],
       lunchBreak: settings.lunchBreak || { start: '01:00 PM', end: '02:00 PM' },
       leaves: settings.leaves || [],
@@ -111,16 +116,17 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
 
   const handleSave = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    setErrorMessage(null);
     if (!formData.trainerPassword?.trim()) {
-      alert('Trainer password cannot be empty.');
+      setErrorMessage('Trainer password cannot be empty.');
       return;
     }
     if (!formData.studentPassword?.trim()) {
-      alert('Student default password cannot be empty.');
+      setErrorMessage('Student default password cannot be empty.');
       return;
     }
     if (!formData.institutionName?.trim()) {
-      alert('Institution name cannot be empty.');
+      setErrorMessage('Institution name cannot be empty.');
       return;
     }
     onSaveSettings(formData);
@@ -188,6 +194,13 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
         </div>
       </div>
 
+      {errorMessage && (
+        <div className="bg-rose-50 border border-rose-300 text-rose-800 px-4 py-3 rounded-lg text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
       <form onSubmit={handleSave} className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Card 1: Trainer Profile & Credentials */}
@@ -200,14 +213,17 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
             <div className="space-y-3 text-xs">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Trainer Login Username (Fixed)
+                  Trainer Login Username
                 </label>
                 <input
                   type="text"
-                  disabled
-                  value="PPSTrainer"
-                  className="w-full p-2 bg-slate-100 border border-slate-300 rounded font-mono text-slate-700 font-bold"
+                  required
+                  value={formData.trainerUsername || 'PPSTrainer'}
+                  onChange={e => setFormData({ ...formData, trainerUsername: e.target.value })}
+                  placeholder="PPSTrainer"
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded font-mono text-slate-700 font-bold focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
                 />
+                <span className="text-[10px] text-slate-400">Used to log in to the trainer portal.</span>
               </div>
 
               <div>

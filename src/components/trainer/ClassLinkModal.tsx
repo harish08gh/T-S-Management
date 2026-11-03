@@ -49,6 +49,7 @@ export const ClassLinkModal: React.FC<ClassLinkModalProps> = ({
       title,
       durationOption,
       expiresAt: calculatedExpiry,
+      createdAt: new Date().toISOString(),
       active: true,
       notes
     });

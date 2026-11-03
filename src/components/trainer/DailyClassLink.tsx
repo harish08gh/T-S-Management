@@ -36,6 +36,8 @@ export const DailyClassLink: React.FC<DailyClassLinkProps> = ({
   const [notes, setNotes] = useState(currentLink.notes || '');
   const [copied, setCopied] = useState(false);
   const [timeLeftStr, setTimeLeftStr] = useState<string>('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Live countdown timer calculation
   useEffect(() => {
@@ -64,8 +66,9 @@ export const DailyClassLink: React.FC<DailyClassLinkProps> = ({
 
   const handleSaveLink = (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
     if (!url.trim()) {
-      alert('Please enter a valid class URL.');
+      setErrorMessage('Please enter a valid class URL.');
       return;
     }
 
@@ -98,7 +101,8 @@ export const DailyClassLink: React.FC<DailyClassLinkProps> = ({
       notes
     });
 
-    alert('Daily Class Link updated successfully and broadcasted to students!');
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3500);
   };
 
   const handleCopyLink = () => {
@@ -143,6 +147,27 @@ export const DailyClassLink: React.FC<DailyClassLinkProps> = ({
           </div>
 
           <form onSubmit={handleSaveLink} className="p-6 space-y-4 text-xs">
+            {saveSuccess && (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded text-emerald-800 flex items-center gap-2 font-semibold animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Daily Class Link updated successfully and published to students!</span>
+              </div>
+            )}
+
+            {errorMessage && (
+              <div className="p-3 bg-rose-50 border border-rose-300 rounded text-rose-800 flex items-center gap-2 font-semibold animate-in fade-in">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
+            <div className="p-3 bg-blue-50/70 border border-blue-200 rounded text-blue-900 text-[11px]">
+              <span className="font-bold block mb-0.5">ℹ️ Daily Link Publishing Policy:</span>
+              <span>
+                To ensure students only access live sessions for today, links are not set by default. The trainer must update today's live link each morning. Students will only see the join link during their batch class hours.
+              </span>
+            </div>
+
             <div>
               <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                 Session Title <span className="text-rose-500">*</span>

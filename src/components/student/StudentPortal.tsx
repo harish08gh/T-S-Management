@@ -30,7 +30,8 @@ import {
   getDayMode,
   getStudentEffectiveTiming,
   isStudentScheduledOnDate,
-  getStudentNextClassInfo
+  getStudentNextClassInfo,
+  isStudentInClassWindow
 } from '../../utils/scheduleUtils';
 
 interface StudentPortalProps {
@@ -58,11 +59,23 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [timeLeftStr, setTimeLeftStr] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+
+  // Keep live time updated for class window checks
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 10000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Weekdays vs Weekend Schedule Intelligence
   const isScheduledToday = isStudentScheduledOnDate(currentStudent, todayStr);
   const effectiveTimingToday = getStudentEffectiveTiming(currentStudent, todayStr);
   const nextClassInfo = getStudentNextClassInfo(currentStudent, todayStr);
+  const classWindow = isStudentInClassWindow(effectiveTimingToday, currentTime);
+
+  // Eligibility: Scheduled today, Trainer published link today, and current time is inside the student's class window
+  const isClassTimeNow = isScheduledToday && classWindow.inWindow;
+  const canAccessClassLink = isClassTimeNow && isClassLinkActive;
 
   // Check if current student has already registered attendance today
   const todayRecord = attendanceRecords.find(
@@ -265,7 +278,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             </div>
 
             <div className="p-6 space-y-5">
-              {/* Batch Schedule Status Banner */}
+              {/* Session / Schedule Status Banners */}
               {!isScheduledToday ? (
                 <div className="bg-amber-50 border border-amber-300 rounded-lg p-3.5 flex items-start space-x-3 text-xs text-amber-900 shadow-2xs">
                   <Calendar className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -281,18 +294,68 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     </p>
                   </div>
                 </div>
-              ) : (
+              ) : !isClassLinkActive ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3.5 flex items-start space-x-3 text-xs text-amber-900 shadow-2xs">
+                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold flex items-center gap-2">
+                      <span>Today's Class Link Pending</span>
+                      <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-2 py-0.2 rounded-full">
+                        Waiting for Trainer
+                      </span>
+                    </div>
+                    <p className="text-amber-800 text-[11px] mt-0.5">
+                      The trainer updates today's live classroom link each morning. Please check back shortly before your scheduled batch time: <strong>{effectiveTimingToday}</strong>.
+                    </p>
+                  </div>
+                </div>
+              ) : !classWindow.inWindow && classWindow.status === 'before' ? (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3.5 flex items-start space-x-3 text-xs text-blue-900 shadow-2xs">
                   <Clock className="w-5 h-5 text-[#0a6ed1] shrink-0 mt-0.5" />
                   <div>
                     <div className="font-bold flex items-center gap-2">
-                      <span>Class Day Active ({currentStudent.mode} Batch)</span>
-                      <span className="text-[10px] bg-[#0a6ed1] text-white font-bold px-2 py-0.2 rounded-full">
-                        Scheduled Session Today
+                      <span>Class Link Locked Until Scheduled Time</span>
+                      <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.2 rounded-full">
+                        Scheduled at {effectiveTimingToday}
                       </span>
                     </div>
                     <p className="text-blue-800 text-[11px] mt-0.5">
-                      Your class is scheduled for today at <strong>{effectiveTimingToday}</strong>.
+                      The live meeting link and touch-attendance button will automatically unlock <strong>15 minutes</strong> before your session starts.
+                      {classWindow.startsInMinutes > 0 && (
+                        <span className="font-semibold block mt-1 text-[#0a6ed1]">
+                          ⏳ Opens in approximately {Math.floor(classWindow.startsInMinutes / 60) > 0 ? `${Math.floor(classWindow.startsInMinutes / 60)} hr ` : ''}{classWindow.startsInMinutes % 60} min.
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              ) : !classWindow.inWindow && classWindow.status === 'after' ? (
+                <div className="bg-slate-50 border border-slate-300 rounded-lg p-3.5 flex items-start space-x-3 text-xs text-slate-800 shadow-2xs">
+                  <CheckCircle2 className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold flex items-center gap-2">
+                      <span>Today's Class Slot Concluded</span>
+                      <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.2 rounded-full">
+                        Session Closed
+                      </span>
+                    </div>
+                    <p className="text-slate-600 text-[11px] mt-0.5">
+                      Your batch slot ({effectiveTimingToday}) for today has ended. Attendance for today's session is locked. See you in the next scheduled class!
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-emerald-50 border border-emerald-300 rounded-lg p-3.5 flex items-start space-x-3 text-xs text-emerald-900 shadow-2xs">
+                  <Clock className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5 animate-pulse" />
+                  <div>
+                    <div className="font-bold flex items-center gap-2">
+                      <span>Class is Live Right Now!</span>
+                      <span className="text-[10px] bg-emerald-600 text-white font-bold px-2 py-0.2 rounded-full animate-pulse">
+                        In Session: {effectiveTimingToday}
+                      </span>
+                    </div>
+                    <p className="text-emerald-800 text-[11px] mt-0.5">
+                      Your class window is currently open. Click <strong>Touch Link & Join Class</strong> below to register your attendance and join the meeting.
                     </p>
                   </div>
                 </div>
@@ -314,7 +377,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     Logged
                   </span>
                 </div>
-              ) : (
+              ) : isClassTimeNow && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start space-x-3 text-xs text-blue-900">
                   <Clock className="w-5 h-5 text-[#0a6ed1] shrink-0 mt-0.5" />
                   <div>
@@ -326,37 +389,49 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 </div>
               )}
 
-              {/* Meeting Link URL & Action */}
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <div className="text-[11px] font-semibold text-slate-500 mb-1">Live Meeting URL:</div>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="font-mono text-xs text-[#0a6ed1] select-all break-all bg-white p-2.5 rounded border border-slate-200 flex-1">
-                    {classLink.url}
+              {/* Meeting Link URL & Action - ONLY VISIBLE AT CLASS TIME */}
+              {canAccessClassLink ? (
+                <div className="bg-slate-50 border-2 border-[#0a6ed1] rounded-lg p-4 animate-in fade-in duration-200">
+                  <div className="text-[11px] font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Live Meeting URL (Active For Your Class):</span>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+                      Available Now
+                    </span>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={handleCopyLink}
-                      className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-xs font-semibold flex items-center gap-1.5 shadow-2xs"
-                    >
-                      <Copy className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{copiedLink ? 'Copied!' : 'Copy'}</span>
-                    </button>
-                    {/* TOUCH LINK ACTION BUTTON */}
-                    <button
-                      onClick={handleInitiateTouchLink}
-                      disabled={!isClassLinkActive}
-                      className={`px-5 py-2 rounded text-xs font-bold flex items-center gap-2 shadow-xs transition-all ${
-                        isClassLinkActive
-                          ? 'bg-[#0a6ed1] hover:bg-[#0854a0] text-white hover:shadow-md'
-                          : 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                      }`}
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      <span>Touch Link & Join Class</span>
-                    </button>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="font-mono text-xs text-[#0a6ed1] select-all break-all bg-white p-2.5 rounded border border-slate-200 flex-1">
+                      {classLink.url}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={handleCopyLink}
+                        className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-xs font-semibold flex items-center gap-1.5 shadow-2xs"
+                      >
+                        <Copy className="w-3.5 h-3.5 text-slate-500" />
+                        <span>{copiedLink ? 'Copied!' : 'Copy'}</span>
+                      </button>
+                      {/* TOUCH LINK ACTION BUTTON */}
+                      <button
+                        onClick={handleInitiateTouchLink}
+                        className="px-5 py-2 rounded text-xs font-bold flex items-center gap-2 shadow-xs transition-all bg-[#0a6ed1] hover:bg-[#0854a0] text-white hover:shadow-md cursor-pointer"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Touch Link & Join Class</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-slate-50/80 border border-dashed border-slate-300 rounded-lg p-5 text-center">
+                  <div className="w-10 h-10 mx-auto rounded-full bg-slate-200 flex items-center justify-center text-slate-500 mb-2">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <h4 className="text-xs font-bold text-slate-700">Class Link Hidden Outside Batch Time</h4>
+                  <p className="text-[11px] text-slate-500 max-w-md mx-auto mt-1">
+                    To prevent unauthorized access and maintain accurate attendance, the live classroom link is only exposed during your scheduled batch timing: <strong className="text-slate-800">{effectiveTimingToday}</strong>.
+                  </p>
+                </div>
+              )}
 
               {/* Trainer Notes */}
               {classLink.notes && (

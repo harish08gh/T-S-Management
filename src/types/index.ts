@@ -126,6 +126,7 @@ export interface LunchBreak {
 }
 
 export interface TrainerSystemSettings {
+  trainerUsername?: string;
   trainerName: string;
   trainerEmail: string;
   trainerPhone: string;

@@ -20,6 +20,7 @@ interface LoginPageProps {
   onStudentLoginSuccess: (student: Student) => void;
   onFindStudentByPhone: (phone: string) => Student | undefined;
   enrolledStudentsCount: number;
+  expectedTrainerUsername?: string;
   expectedTrainerPassword?: string;
   expectedStudentPassword?: string;
 }
@@ -29,6 +30,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   onStudentLoginSuccess,
   onFindStudentByPhone,
   enrolledStudentsCount,
+  expectedTrainerUsername = 'PPSTrainer',
   expectedTrainerPassword = 'PPS@2026',
   expectedStudentPassword = 'Student@PPS26'
 }) => {
@@ -86,7 +88,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     const trimmedUser = trainerUsername.trim();
     const trimmedPass = trainerPassword.trim();
 
-    if (trimmedUser === 'PPSTrainer' && trimmedPass === expectedTrainerPassword) {
+    if (
+      trimmedUser.toLowerCase() === expectedTrainerUsername.toLowerCase() &&
+      trimmedPass === expectedTrainerPassword
+    ) {
       onTrainerLoginSuccess();
     } else {
       setErrorMessage('Invalid trainer credentials. Please verify your administrative username and password.');

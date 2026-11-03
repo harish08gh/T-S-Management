@@ -98,7 +98,7 @@ export class DataService {
 
   private initLocalData() {
     const loadedStudents = loadLocal<Student[]>(STORAGE_KEYS.STUDENTS, INITIAL_STUDENTS);
-    if (!loadedStudents || loadedStudents.length === 0 || !loadedStudents.some(s => s.id === 'irr-9')) {
+    if (!loadedStudents || loadedStudents.length === 0 || !loadedStudents.some(s => s.id === 'comp-38')) {
       const existingMap = new Map((loadedStudents || []).map(s => [s.id, s]));
       INITIAL_STUDENTS.forEach(s => {
         if (!existingMap.has(s.id)) existingMap.set(s.id, s);
@@ -117,7 +117,25 @@ export class DataService {
       this.demos = loadedDemos;
     }
     this.attendance = loadLocal<AttendanceRecord[]>(STORAGE_KEYS.ATTENDANCE, INITIAL_ATTENDANCE);
-    this.classLink = loadLocal<ClassLink>(STORAGE_KEYS.CLASS_LINK, INITIAL_CLASS_LINK);
+    
+    // Validate class link freshness - must be created today, not the old default meet.google.com link
+    const loadedClassLink = loadLocal<ClassLink>(STORAGE_KEYS.CLASS_LINK, INITIAL_CLASS_LINK);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const linkCreatedDate = loadedClassLink.createdAt ? loadedClassLink.createdAt.split('T')[0] : '';
+    
+    if (!linkCreatedDate || linkCreatedDate !== todayStr || loadedClassLink.url === 'https://meet.google.com/new') {
+      this.classLink = {
+        ...INITIAL_CLASS_LINK,
+        active: false,
+        url: '',
+        createdAt: '',
+        expiresAt: ''
+      };
+      saveLocal(STORAGE_KEYS.CLASS_LINK, this.classLink);
+    } else {
+      this.classLink = loadedClassLink;
+    }
+
     this.completionSettings = loadLocal<CourseCompletionSettings>(
       STORAGE_KEYS.COMPLETION_SETTINGS,
       INITIAL_COMPLETION_SETTINGS
@@ -529,11 +547,23 @@ export class DataService {
     }
   }
 
-  // Helper to check if class link is expired
+  // Helper to check if class link is active (must be updated today by trainer and not expired)
   public isClassLinkActive(): boolean {
     if (!this.classLink || !this.classLink.active) return false;
-    const expiresAt = new Date(this.classLink.expiresAt).getTime();
-    return Date.now() < expiresAt;
+    if (!this.classLink.url || !this.classLink.url.trim()) return false;
+    if (!this.classLink.createdAt) return false;
+
+    // Must be updated TODAY by trainer
+    const todayStr = new Date().toISOString().split('T')[0];
+    const createdDateStr = this.classLink.createdAt.split('T')[0];
+    if (createdDateStr !== todayStr) return false;
+
+    if (this.classLink.expiresAt) {
+      const expiresAt = new Date(this.classLink.expiresAt).getTime();
+      if (Date.now() >= expiresAt) return false;
+    }
+
+    return true;
   }
 
   // ---- COURSE COMPLETION SETTINGS & TEMPLATE ----

@@ -30,6 +30,7 @@ const AUTH_STORAGE_KEY = 'pps_auth_session_clean_v3';
 const SETTINGS_STORAGE_KEY = 'pps_trainer_system_settings_v3';
 
 const DEFAULT_TRAINER_SETTINGS: TrainerSystemSettings = {
+  trainerUsername: 'PPSTrainer',
   trainerName: 'PPSTrainer',
   trainerEmail: 'trainer@pps-sw.com',
   trainerPhone: '+91 98400 00000',
@@ -364,6 +365,7 @@ export default function App() {
         onStudentLoginSuccess={handleStudentLoginSuccess}
         onFindStudentByPhone={(phone) => dataService.findStudentByPhone(phone)}
         enrolledStudentsCount={students.length}
+        expectedTrainerUsername={systemSettings.trainerUsername || 'PPSTrainer'}
         expectedTrainerPassword={systemSettings.trainerPassword}
         expectedStudentPassword={systemSettings.studentPassword}
       />

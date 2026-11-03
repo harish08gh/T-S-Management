@@ -93,6 +93,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   settings
 }) => {
   const [selectedTopicInput, setSelectedTopicInput] = useState<{ [id: string]: string }>({});
+  const [customPercentDeltas, setCustomPercentDeltas] = useState<Record<string, number>>({});
 
   // Real-time clock for active & upcoming class tracking
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -577,25 +578,63 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
               </div>
 
-              {/* Quick 1-click end of day increment buttons */}
-              <div className="flex items-center space-x-1.5 self-end md:self-auto">
+              {/* Quick 1-click end of day increment buttons & custom input stepper */}
+              <div className="flex flex-wrap items-center gap-2 self-end md:self-auto">
                 <button
+                  type="button"
                   onClick={() => onQuickUpdateCompletion(std.id, 5)}
-                  className="px-2 py-1 text-[11px] font-medium bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 rounded border border-slate-200 transition-colors"
+                  className="px-2 py-1 text-[11px] font-medium bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 rounded border border-slate-200 transition-colors cursor-pointer"
                   title="Add +5% completion for today's covered syllabus"
                 >
-                  +5% Today
+                  +5%
                 </button>
                 <button
+                  type="button"
                   onClick={() => onQuickUpdateCompletion(std.id, 10)}
-                  className="px-2 py-1 text-[11px] font-medium bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 rounded border border-slate-200 transition-colors"
+                  className="px-2 py-1 text-[11px] font-medium bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 rounded border border-slate-200 transition-colors cursor-pointer"
                   title="Add +10% completion for today's covered syllabus"
                 >
                   +10%
                 </button>
+
+                {/* Stepper with - (Value)% + */}
+                <div className="flex items-center border border-slate-300 rounded overflow-hidden bg-white shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => onQuickUpdateCompletion(std.id, -(customPercentDeltas[std.id] ?? 5))}
+                    className="px-2 py-1 text-xs font-bold bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-700 border-r border-slate-200 transition-colors cursor-pointer"
+                    title={`Subtract -${customPercentDeltas[std.id] ?? 5}% from completion`}
+                  >
+                    -
+                  </button>
+                  <div className="flex items-center px-1 bg-white">
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={customPercentDeltas[std.id] ?? 5}
+                      onChange={(e) => {
+                        const val = Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1));
+                        setCustomPercentDeltas(prev => ({ ...prev, [std.id]: val }));
+                      }}
+                      className="w-8 text-center font-bold text-xs text-slate-800 focus:outline-none py-0.5"
+                    />
+                    <span className="text-[10px] text-slate-400 font-semibold pr-0.5">%</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onQuickUpdateCompletion(std.id, customPercentDeltas[std.id] ?? 5)}
+                    className="px-2 py-1 text-xs font-bold bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 border-l border-slate-200 transition-colors cursor-pointer"
+                    title={`Add +${customPercentDeltas[std.id] ?? 5}% to completion`}
+                  >
+                    +
+                  </button>
+                </div>
+
                 <button
+                  type="button"
                   onClick={() => onNavigateTab('class_schedule')}
-                  className="px-2.5 py-1 text-[11px] font-medium bg-[#0a6ed1] hover:bg-[#0854a0] text-white rounded transition-colors"
+                  className="px-2.5 py-1 text-[11px] font-medium bg-[#0a6ed1] hover:bg-[#0854a0] text-white rounded transition-colors cursor-pointer"
                   title="Open schedule to set exact % or Date of Ending (DOE)"
                 >
                   Set DOE / Edit
