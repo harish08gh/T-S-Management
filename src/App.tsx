@@ -56,7 +56,8 @@ const DEFAULT_TRAINER_SETTINGS: TrainerSystemSettings = {
   shiftTimingWeekend: {
     start: '10:00 AM',
     end: '04:00 PM'
-  }
+  },
+  allowedPercentageStudentIds: []
 };
 
 interface AuthSession {
@@ -89,6 +90,7 @@ export default function App() {
         leaves: parsed.leaves || DEFAULT_TRAINER_SETTINGS.leaves,
         shiftTimingWeekday: parsed.shiftTimingWeekday || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekday,
         shiftTimingWeekend: parsed.shiftTimingWeekend || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekend,
+        allowedPercentageStudentIds: parsed.allowedPercentageStudentIds || DEFAULT_TRAINER_SETTINGS.allowedPercentageStudentIds || []
       };
     } catch {
       return DEFAULT_TRAINER_SETTINGS;
@@ -373,7 +375,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f6f8] flex flex-col text-[#2b3036]">
+    <div className="h-screen max-h-screen w-screen overflow-hidden bg-[#f5f6f8] flex flex-col text-[#2b3036]">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-5 right-5 z-50 animate-in fade-in slide-in-from-bottom-4 duration-200">
@@ -417,8 +419,8 @@ export default function App() {
 
       {/* Role: TRAINER PORTAL */}
       {role === 'trainer' && (
-        <div className="flex-1 flex overflow-hidden">
-          {/* Side Navigation Bar */}
+        <div className="flex-1 flex overflow-hidden min-h-0 w-full">
+          {/* Side Navigation Bar - FIXED ON LEFT */}
           <SidebarNavigation
             activeTab={trainerTab}
             onTabChange={setTrainerTab}
@@ -434,8 +436,9 @@ export default function App() {
             }}
           />
 
-          {/* Main Content Area */}
-          <main className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* Main Content Area - ONLY THIS SCREEN AREA SCROLLS */}
+          <div className="flex-1 flex flex-col overflow-y-auto min-h-0 h-full bg-[#f5f6f8]" id="trainer-screen-scroll">
+            <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6">
             {trainerTab === 'dashboard' && (
               <Dashboard
                 students={students}
@@ -527,43 +530,85 @@ export default function App() {
                 onWipeDatabase={handleWipeDatabase}
               />
             )}
-          </main>
+            </main>
+
+            {/* Enterprise Footer inside scrollable screen area */}
+            <footer className="bg-white border-t border-[#d9e0e7] py-3 text-xs text-slate-500 mt-auto shrink-0">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
+                <div className="flex items-center space-x-2">
+                  <span className="font-semibold text-slate-700">PPS Software Training & Student Management</span>
+                  <span>•</span>
+                  <span>{systemSettings.institutionName}</span>
+                </div>
+                <div className="flex items-center space-x-4 text-[11px] text-slate-400">
+                  <button
+                    onClick={handleLogout}
+                    className="text-rose-600 hover:underline font-semibold cursor-pointer"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            </footer>
+          </div>
         </div>
       )}
 
       {/* Role: STUDENT PORTAL (Strictly for the authenticated student only) */}
       {role === 'student' && (
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {selectedStudent ? (
-            <StudentPortal
-              currentStudent={selectedStudent}
-              classLink={classLink}
-              isClassLinkActive={isLinkActive}
-              attendanceRecords={currentStudentAttendance}
-              completionSettings={completionSettings}
-              onStudentTouchLink={handleStudentTouchLink}
-              todayStr={todayStr}
-            />
-          ) : (
-            <div className="bg-white rounded-lg p-12 text-center border border-slate-200 shadow-xs max-w-md mx-auto space-y-4">
-              <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
-                <AlertCircle className="w-6 h-6" />
+        <div className="flex-1 flex flex-col overflow-y-auto min-h-0 h-full bg-[#f5f6f8]" id="student-screen-scroll">
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            {selectedStudent ? (
+              <StudentPortal
+                currentStudent={selectedStudent}
+                classLink={classLink}
+                isClassLinkActive={isLinkActive}
+                attendanceRecords={currentStudentAttendance}
+                completionSettings={completionSettings}
+                onStudentTouchLink={handleStudentTouchLink}
+                todayStr={todayStr}
+                allowedPercentageStudentIds={systemSettings.allowedPercentageStudentIds || []}
+              />
+            ) : (
+              <div className="bg-white rounded-lg p-12 text-center border border-slate-200 shadow-xs max-w-md mx-auto space-y-4">
+                <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <h2 className="text-base font-bold text-slate-800">No Student Profile Loaded</h2>
+                <p className="text-xs text-slate-500">
+                  Please log out and sign in with your registered mobile number.
+                </p>
+                <div className="pt-2 flex justify-center space-x-2">
+                  <button
+                    onClick={handleLogout}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold cursor-pointer"
+                  >
+                    Return to Login
+                  </button>
+                </div>
               </div>
-              <h2 className="text-base font-bold text-slate-800">No Student Profile Loaded</h2>
-              <p className="text-xs text-slate-500">
-                Please log out and sign in with your registered mobile number.
-              </p>
-              <div className="pt-2 flex justify-center space-x-2">
+            )}
+          </main>
+
+          {/* Enterprise Footer inside student scrollable area */}
+          <footer className="bg-white border-t border-[#d9e0e7] py-3 text-xs text-slate-500 mt-auto shrink-0">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
+              <div className="flex items-center space-x-2">
+                <span className="font-semibold text-slate-700">PPS Software Training & Student Management</span>
+                <span>•</span>
+                <span>{systemSettings.institutionName}</span>
+              </div>
+              <div className="flex items-center space-x-4 text-[11px] text-slate-400">
                 <button
                   onClick={handleLogout}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold cursor-pointer"
+                  className="text-rose-600 hover:underline font-semibold cursor-pointer"
                 >
-                  Return to Login
+                  Sign Out
                 </button>
               </div>
             </div>
-          )}
-        </main>
+          </footer>
+        </div>
       )}
 
       {/* Quick Modal for Trainer Class Link Broadcast */}
@@ -573,25 +618,6 @@ export default function App() {
         currentLink={classLink}
         onSave={handleUpdateClassLink}
       />
-
-      {/* Enterprise Footer */}
-      <footer className="bg-white border-t border-[#d9e0e7] py-3 text-xs text-slate-500 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center space-x-2">
-            <span className="font-semibold text-slate-700">PPS Software Training & Student Management</span>
-            <span>•</span>
-            <span>{systemSettings.institutionName}</span>
-          </div>
-          <div className="flex items-center space-x-4 text-[11px] text-slate-400">
-            <button
-              onClick={handleLogout}
-              className="text-rose-600 hover:underline font-semibold cursor-pointer"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

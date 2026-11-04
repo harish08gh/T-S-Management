@@ -116,12 +116,12 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
   return (
     <aside
-      className={`bg-[#192636] border-r border-[#26374a] text-slate-200 transition-all duration-300 ease-in-out shrink-0 flex flex-col z-30 select-none ${
+      className={`bg-[#192636] border-r border-[#26374a] text-slate-200 transition-all duration-300 ease-in-out shrink-0 flex flex-col z-30 select-none h-full overflow-hidden ${
         isCollapsed ? 'w-16' : 'w-64'
       }`}
     >
       {/* Top Header inside Sidebar: Navigation Section Label */}
-      <div className="h-12 px-4 border-b border-[#26374a] flex items-center justify-between text-xs">
+      <div className="shrink-0 h-12 px-4 border-b border-[#26374a] flex items-center justify-between text-xs">
         {!isCollapsed ? (
           <span className="font-bold uppercase tracking-wider text-slate-400 text-[10px]">
             Navigation Menu
@@ -140,7 +140,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
       </div>
 
       {/* Navigation Links */}
-      <div className="flex-1 py-3 px-2 space-y-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700">
+      <div className="flex-1 min-h-0 py-3 px-2 space-y-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700">
         {tabs.map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -216,7 +216,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
       </div>
 
       {/* Bottom Profile / Quick Info */}
-      <div className="p-3 border-t border-[#26374a] bg-[#141e2b]/80">
+      <div className="shrink-0 p-3 border-t border-[#26374a] bg-[#141e2b]/80">
         {!isCollapsed ? (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[11px]">

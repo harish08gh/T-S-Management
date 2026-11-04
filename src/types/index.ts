@@ -28,6 +28,7 @@ export interface Student {
   weekendTiming?: string;
   tempTimingOverrides?: Record<string, { timing: string; reason?: string; setAt?: string }>;
   completionPercentage: number; // 0 - 100
+  showCompletionPercentage?: boolean; // Trainer controlled visibility
   trainerName: string;
   remark: string;
   isIrregular: boolean;
@@ -144,4 +145,5 @@ export interface TrainerSystemSettings {
   leaves: TrainerLeave[];
   shiftTimingWeekday: ShiftTiming;
   shiftTimingWeekend: ShiftTiming;
+  allowedPercentageStudentIds?: string[];
 }

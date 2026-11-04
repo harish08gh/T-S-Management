@@ -44,7 +44,7 @@ export const ShellBar: React.FC<ShellBarProps> = ({
   onToggleSidebar
 }) => {
   return (
-    <header className="fiori-shell sticky top-0 z-40 text-white shadow-md">
+    <header className="fiori-shell sticky top-0 z-40 text-white shadow-md shrink-0">
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14">
           {/* Left Brand & App Title */}

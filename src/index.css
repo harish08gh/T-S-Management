@@ -13,6 +13,15 @@
     --fiori-text-muted: #64748b;
   }
 
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
   body {
     background-color: var(--fiori-bg);
     color: var(--fiori-text-main);
