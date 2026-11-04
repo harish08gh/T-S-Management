@@ -227,7 +227,8 @@ export function isStudentInClassWindow(
 
     const startMin = parseTimePartToMinutes(parts[0], false);
     const endMin = parseTimePartToMinutes(parts[1], true, startMin);
-    const windowStart = Math.max(0, startMin - 15); // 15 mins early access
+    // STRICT REQUIREMENT: Unlock ONLY at the exact scheduled or changed start time (no early access)
+    const windowStart = startMin;
 
     // Check if active right now
     if (currentMinutes >= windowStart && currentMinutes <= endMin) {
@@ -346,5 +347,16 @@ export function getLastCoveredTopic(
     date: null,
     hasRecord: false
   };
+}
+
+/**
+ * Checks if a specific date is a configured Government / Public Holiday
+ */
+export function getGovernmentHoliday(
+  dateStr: string,
+  holidays: { date: string; name: string }[] = []
+): { date: string; name: string } | undefined {
+  if (!holidays || holidays.length === 0 || !dateStr) return undefined;
+  return holidays.find(h => h.date === dateStr);
 }
 

@@ -29,6 +29,7 @@ export interface Student {
   tempTimingOverrides?: Record<string, { timing: string; reason?: string; setAt?: string }>;
   completionPercentage: number; // 0 - 100
   showCompletionPercentage?: boolean; // Trainer controlled visibility
+  showAttendanceHistory?: boolean; // Trainer controlled visibility
   trainerName: string;
   remark: string;
   isIrregular: boolean;
@@ -63,6 +64,7 @@ export interface AttendanceRecord {
   time: string;
   attendance: AttendanceStatus;
   topicCovered: string; // fillable by trainer
+  absenceReason?: string; // Reason provided by student when joining subsequent class
   markedBy: 'Student (Touch Link)' | 'Trainer (Dashboard)' | 'Trainer (Attendance Page)' | 'Trainer (Extra/Off-Day Session)';
   markedAt: string;
 }
@@ -126,6 +128,12 @@ export interface LunchBreak {
   end: string;   // e.g. "02:00 PM"
 }
 
+export interface GovernmentHoliday {
+  id: string;
+  date: string; // YYYY-MM-DD
+  name: string;
+}
+
 export interface TrainerSystemSettings {
   trainerUsername?: string;
   trainerName: string;
@@ -143,7 +151,9 @@ export interface TrainerSystemSettings {
   weekOffDays: string[]; // e.g. ['Sunday', 'Saturday']
   lunchBreak: LunchBreak;
   leaves: TrainerLeave[];
+  holidays?: GovernmentHoliday[]; // Government / Public Holidays
   shiftTimingWeekday: ShiftTiming;
   shiftTimingWeekend: ShiftTiming;
-  allowedPercentageStudentIds?: string[];
+  allowedPercentageStudentIds?: string[]; // IDs of students granted access to view percentage
+  allowedAttendanceStudentIds?: string[]; // IDs of students granted access to view attendance history
 }

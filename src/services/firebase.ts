@@ -491,10 +491,29 @@ export class DataService {
     return this.getOngoingStudents().filter(s => !markedStudentIds.has(s.id));
   }
 
-  // Student Touches Link to mark attendance as present
-  public async studentTouchLinkAttendance(studentId: string): Promise<AttendanceRecord> {
+  // Student Touches Link to mark attendance as present and optionally logs absence explanation
+  public async studentTouchLinkAttendance(
+    studentId: string,
+    absenceReason?: string,
+    missedRecordIds?: string[]
+  ): Promise<AttendanceRecord> {
     const student = this.students.find(s => s.id === studentId);
     if (!student) throw new Error('Student not found');
+
+    // If an absence reason was provided for prior missed dates, update those records
+    if (absenceReason && missedRecordIds && missedRecordIds.length > 0) {
+      for (const recId of missedRecordIds) {
+        const missedRec = this.attendance.find(a => a.id === recId);
+        if (missedRec) {
+          missedRec.absenceReason = absenceReason;
+          try {
+            await updateDoc(doc(firestore, 'attendance', recId), { absenceReason });
+          } catch (e) {
+            console.warn('[Firestore] update absence reason fallback:', e);
+          }
+        }
+      }
+    }
 
     const todayStr = new Date().toISOString().split('T')[0];
     const existing = this.attendance.find(
@@ -505,6 +524,9 @@ export class DataService {
       existing.attendance = 'Present';
       existing.markedBy = 'Student (Touch Link)';
       existing.markedAt = new Date().toISOString();
+      if (absenceReason && !existing.absenceReason) {
+        existing.absenceReason = `Absence explained upon rejoin: ${absenceReason}`;
+      }
       await this.recordAttendance(existing);
       return existing;
     }
@@ -519,7 +541,8 @@ export class DataService {
       attendance: 'Present',
       topicCovered: 'Daily Session - Student Joined via Active Class Link',
       markedBy: 'Student (Touch Link)',
-      markedAt: new Date().toISOString()
+      markedAt: new Date().toISOString(),
+      absenceReason: absenceReason ? `Absence explained upon rejoin: ${absenceReason}` : undefined
     };
 
     await this.recordAttendance(newRecord);

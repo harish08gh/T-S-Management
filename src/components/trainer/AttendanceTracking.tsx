@@ -30,7 +30,8 @@ import {
   getDayMode,
   getStudentEffectiveTiming,
   isStudentScheduledOnDate,
-  getStudentNextClassInfo
+  getStudentNextClassInfo,
+  getGovernmentHoliday
 } from '../../utils/scheduleUtils';
 
 interface AttendanceTrackingProps {
@@ -195,8 +196,26 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
 
   const currentSelectedStudent = ongoingStudents.find(s => s.id === selectedStudentId);
 
-  const studentWisePresentCount = studentRecords.filter(r => r.attendance === 'Present').length;
-  const studentWiseTotalCount = studentRecords.length;
+  // For weekend students, evaluate attendance strictly based on weekend days (plus any extra makeup sessions attended)
+  // Deduct public holidays and week-offs as official non-working days
+  const studentWiseEvaluatedRecords = useMemo(() => {
+    if (!currentSelectedStudent) return studentRecords;
+    return studentRecords.filter(r => {
+      const isGovHoliday = Boolean(getGovernmentHoliday(r.date, settings?.holidays));
+      const isWeekOff = checkIsWeekOff(r.date, settings?.weekOffDays);
+      if ((isGovHoliday || isWeekOff) && r.attendance !== 'Present') {
+        return false;
+      }
+      if (currentSelectedStudent.mode === 'Weekend') {
+        return checkIsWeekend(r.date) || r.attendance === 'Present';
+      } else {
+        return !checkIsWeekend(r.date) || r.attendance === 'Present';
+      }
+    });
+  }, [studentRecords, currentSelectedStudent, settings]);
+
+  const studentWisePresentCount = studentWiseEvaluatedRecords.filter(r => r.attendance === 'Present').length;
+  const studentWiseTotalCount = studentWiseEvaluatedRecords.length;
   const studentWisePct = studentWiseTotalCount > 0 ? Math.round((studentWisePresentCount / studentWiseTotalCount) * 100) : 0;
 
   // MONTH-WISE VIEW: breakdown for all students in selected month
@@ -205,11 +224,24 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
   }, [attendance, selectedMonth]);
 
   const monthStudentSummaries = useMemo(() => {
-    // Unique session dates in this month
-    const sessionDates = Array.from(new Set(monthWiseRecords.map(r => r.date))).sort();
-
     return ongoingStudents.map(student => {
-      const studentMonthRecords = monthWiseRecords.filter(r => r.studentId === student.id);
+      const isWeekendStudent = student.mode === 'Weekend';
+      // For weekend student, strictly calculate attendance based upon weekend days
+      // Apply holiday rule: official holidays and weekoffs are not counted as unexcused absences
+      const studentMonthRecords = monthWiseRecords.filter(r => {
+        if (r.studentId !== student.id) return false;
+        const isGovHoliday = Boolean(getGovernmentHoliday(r.date, settings?.holidays));
+        const isWeekOff = checkIsWeekOff(r.date, settings?.weekOffDays);
+        if ((isGovHoliday || isWeekOff) && r.attendance !== 'Present') {
+          return false;
+        }
+        if (isWeekendStudent) {
+          return checkIsWeekend(r.date) || r.attendance === 'Present';
+        } else {
+          return !checkIsWeekend(r.date) || r.attendance === 'Present';
+        }
+      });
+
       const presentDays = studentMonthRecords.filter(r => r.attendance === 'Present').length;
       const absentDays = studentMonthRecords.filter(r => r.attendance === 'Absent').length;
       const totalRecorded = studentMonthRecords.length;
@@ -224,7 +256,7 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
         records: studentMonthRecords
       };
     });
-  }, [ongoingStudents, monthWiseRecords]);
+  }, [ongoingStudents, monthWiseRecords, settings]);
 
   // Scheduled students for the selected single date (Mon-Fri -> Weekdays, Sat-Sun -> Weekend)
   const scheduledStudentsForDate = useMemo(() => {
@@ -709,6 +741,26 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
             </div>
           )}
 
+          {/* Government / Public Holiday Alert Banner */}
+          {getGovernmentHoliday(singleDate, settings?.holidays) && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg flex items-center justify-between text-xs text-rose-900 shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-700 shrink-0">
+                  <CalendarDays className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold">Government & Public Holiday: </span>
+                  <span>
+                    Official holiday declared on {singleDate} — <strong>{getGovernmentHoliday(singleDate, settings?.holidays)?.name}</strong>. Academy classes suspended.
+                  </span>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 bg-rose-200 text-rose-900 font-bold rounded text-[11px] uppercase tracking-wide border border-rose-300">
+                Official Holiday
+              </span>
+            </div>
+          )}
+
           {/* Daily Schedule & Attendance KPI Ribbon */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="bg-white border border-[#d9e0e7] rounded-lg p-3 shadow-2xs">
@@ -893,9 +945,16 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
                               }}
                               className="group cursor-pointer flex items-center justify-between p-1.5 rounded hover:bg-blue-50/70 border border-transparent hover:border-blue-200 transition-colors"
                             >
-                              <span className={row.topicCovered ? 'text-slate-800' : 'text-slate-400 italic'}>
-                                {row.topicCovered || 'Click to enter topic...'}
-                              </span>
+                              <div>
+                                <span className={row.topicCovered ? 'text-slate-800' : 'text-slate-400 italic'}>
+                                  {row.topicCovered || 'Click to enter topic...'}
+                                </span>
+                                {row.record?.absenceReason && (
+                                  <div className="mt-1 text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.2 inline-block">
+                                    <strong>Absence Reason:</strong> {row.record.absenceReason}
+                                  </div>
+                                )}
+                              </div>
                               <Edit3 className="w-3 h-3 text-slate-400 group-hover:text-[#0a6ed1] opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0" />
                             </div>
                           )}
@@ -1031,7 +1090,14 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
                                 {r.attendance}
                               </span>
                             </td>
-                            <td className="py-3 px-4 text-slate-700">{r.topicCovered || '—'}</td>
+                            <td className="py-3 px-4 text-slate-700">
+                              <div>{r.topicCovered || '—'}</div>
+                              {r.absenceReason && (
+                                <div className="mt-1 text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.2 inline-block">
+                                  <strong>Absence Reason:</strong> {r.absenceReason}
+                                </div>
+                              )}
+                            </td>
                             <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">{r.markedBy}</td>
                           </tr>
                         ))
@@ -1227,6 +1293,9 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
                 <span className="flex items-center gap-1 text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                   <span className="w-2 h-2 rounded-full bg-rose-500"></span> Absent
                 </span>
+                <span className="flex items-center gap-1 text-rose-800 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 font-medium">
+                  <CalendarDays className="w-3 h-3 text-rose-600" /> Public Holiday
+                </span>
                 <span className="flex items-center gap-1 text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 font-medium">
                   <SunMedium className="w-3 h-3 text-purple-600" /> Week-Off
                 </span>
@@ -1254,6 +1323,7 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
                   const isToday = cell.dateStr === todayStr;
                   const isWeekOff = checkIsWeekOff(cell.dateStr, settings?.weekOffDays);
                   const trainerLeave = checkTrainerLeave(cell.dateStr, settings?.leaves);
+                  const govHoliday = getGovernmentHoliday(cell.dateStr, settings?.holidays);
                   const dayRecords = attendance.filter(a => a.date === cell.dateStr);
                   const presentCount = dayRecords.filter(a => a.attendance === 'Present').length;
                   const absentCount = dayRecords.filter(a => a.attendance === 'Absent').length;
@@ -1271,6 +1341,8 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
                           ? 'bg-slate-50/60 opacity-40 hover:opacity-80'
                           : isToday
                           ? 'bg-blue-50/40 hover:bg-blue-50/80 ring-1 ring-inset ring-blue-400'
+                          : govHoliday
+                          ? 'bg-rose-50/50 hover:bg-rose-50/80 ring-1 ring-inset ring-rose-200'
                           : isWeekOff
                           ? 'bg-purple-50/30 hover:bg-purple-50/70'
                           : trainerLeave
@@ -1292,7 +1364,15 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
                         </span>
 
                         <div className="flex items-center gap-1">
-                          {isWeekOff && (
+                          {govHoliday && (
+                            <span
+                              className="text-[9px] bg-rose-200 text-rose-900 font-bold px-1.5 py-0.2 rounded border border-rose-300 truncate max-w-[75px]"
+                              title={govHoliday.name}
+                            >
+                              Holiday
+                            </span>
+                          )}
+                          {isWeekOff && !govHoliday && (
                             <span className="text-[9px] bg-purple-100 text-purple-800 font-bold px-1.5 py-0.2 rounded border border-purple-200">
                               Week-Off
                             </span>
@@ -1327,6 +1407,10 @@ export const AttendanceTracking: React.FC<AttendanceTrackingProps> = ({
                                 📖 {topics[0]}
                               </div>
                             )}
+                          </div>
+                        ) : govHoliday ? (
+                          <div className="text-[10px] text-rose-700 font-semibold truncate" title={govHoliday.name}>
+                            🎉 {govHoliday.name}
                           </div>
                         ) : isWeekOff ? (
                           <div className="text-[10px] text-purple-600 italic">

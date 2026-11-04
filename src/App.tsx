@@ -57,7 +57,18 @@ const DEFAULT_TRAINER_SETTINGS: TrainerSystemSettings = {
     start: '10:00 AM',
     end: '04:00 PM'
   },
-  allowedPercentageStudentIds: []
+  allowedPercentageStudentIds: [],
+  allowedAttendanceStudentIds: [],
+  holidays: [
+    { id: 'hol-1', date: '2026-01-14', name: 'Pongal / Makar Sankranti' },
+    { id: 'hol-2', date: '2026-01-26', name: 'Republic Day' },
+    { id: 'hol-3', date: '2026-04-14', name: 'Tamil New Year / Dr. Ambedkar Jayanti' },
+    { id: 'hol-4', date: '2026-05-01', name: 'May Day (Labour Day)' },
+    { id: 'hol-5', date: '2026-08-15', name: 'Independence Day' },
+    { id: 'hol-6', date: '2026-10-02', name: 'Gandhi Jayanti' },
+    { id: 'hol-7', date: '2026-10-20', name: 'Deepavali' },
+    { id: 'hol-8', date: '2026-12-25', name: 'Christmas Day' }
+  ]
 };
 
 interface AuthSession {
@@ -90,7 +101,9 @@ export default function App() {
         leaves: parsed.leaves || DEFAULT_TRAINER_SETTINGS.leaves,
         shiftTimingWeekday: parsed.shiftTimingWeekday || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekday,
         shiftTimingWeekend: parsed.shiftTimingWeekend || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekend,
-        allowedPercentageStudentIds: parsed.allowedPercentageStudentIds || DEFAULT_TRAINER_SETTINGS.allowedPercentageStudentIds || []
+        allowedPercentageStudentIds: parsed.allowedPercentageStudentIds || DEFAULT_TRAINER_SETTINGS.allowedPercentageStudentIds || [],
+        allowedAttendanceStudentIds: parsed.allowedAttendanceStudentIds || DEFAULT_TRAINER_SETTINGS.allowedAttendanceStudentIds || [],
+        holidays: parsed.holidays || DEFAULT_TRAINER_SETTINGS.holidays || []
       };
     } catch {
       return DEFAULT_TRAINER_SETTINGS;
@@ -342,9 +355,18 @@ export default function App() {
   };
 
   // Handler: Student touches link
-  const handleStudentTouchLink = async (studentId: string) => {
-    await dataService.studentTouchLinkAttendance(studentId);
-    showToast('Attendance logged as PRESENT via Class Link Touch!', 'success');
+  const handleStudentTouchLink = async (
+    studentId: string,
+    absenceReason?: string,
+    missedRecordIds?: string[]
+  ) => {
+    await dataService.studentTouchLinkAttendance(studentId, absenceReason, missedRecordIds);
+    showToast(
+      absenceReason
+        ? 'Absence reason submitted & attendance logged as PRESENT via Class Link!'
+        : 'Attendance logged as PRESENT via Class Link Touch!',
+      'success'
+    );
   };
 
   // Handler: Class Link update
@@ -576,6 +598,8 @@ export default function App() {
                 onStudentTouchLink={handleStudentTouchLink}
                 todayStr={todayStr}
                 allowedPercentageStudentIds={systemSettings.allowedPercentageStudentIds || []}
+                allowedAttendanceStudentIds={systemSettings.allowedAttendanceStudentIds || []}
+                holidays={systemSettings.holidays || []}
               />
             ) : (
               <div className="bg-white rounded-lg p-12 text-center border border-slate-200 shadow-xs max-w-md mx-auto space-y-4">

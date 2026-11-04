@@ -17,6 +17,8 @@ import {
   UserCheck,
   Coffee,
   CalendarOff,
+  Calendar,
+  CalendarDays,
   Clock,
   SunMedium,
   Plus,
@@ -25,7 +27,14 @@ import {
   Search,
   GraduationCap
 } from 'lucide-react';
-import { TrainerSystemSettings, Student, DemoStudent, AttendanceRecord, TrainerLeave } from '../../types';
+import {
+  TrainerSystemSettings,
+  Student,
+  DemoStudent,
+  AttendanceRecord,
+  TrainerLeave,
+  GovernmentHoliday
+} from '../../types';
 
 interface TrainerSettingsProps {
   settings: TrainerSystemSettings;
@@ -54,9 +63,11 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
     weekOffDays: settings.weekOffDays || ['Sunday'],
     lunchBreak: settings.lunchBreak || { start: '01:00 PM', end: '02:00 PM' },
     leaves: settings.leaves || [],
+    holidays: settings.holidays || [],
     shiftTimingWeekday: settings.shiftTimingWeekday || { start: '09:00 AM', end: '06:00 PM' },
     shiftTimingWeekend: settings.shiftTimingWeekend || { start: '10:00 AM', end: '04:00 PM' },
-    allowedPercentageStudentIds: settings.allowedPercentageStudentIds || []
+    allowedPercentageStudentIds: settings.allowedPercentageStudentIds || [],
+    allowedAttendanceStudentIds: settings.allowedAttendanceStudentIds || []
   });
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -130,6 +141,61 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
     setFormData({ ...formData, leaves: updatedLeaves });
   };
 
+  // Government & Public Holidays Management
+  const [newHolidayDate, setNewHolidayDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [newHolidayName, setNewHolidayName] = useState<string>('');
+
+  const handleAddHoliday = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setErrorMessage(null);
+    if (!newHolidayDate || !newHolidayName.trim()) {
+      setErrorMessage('Please provide both holiday date and holiday name.');
+      return;
+    }
+    const exists = (formData.holidays || []).some(h => h.date === newHolidayDate);
+    if (exists) {
+      setErrorMessage(`A holiday is already recorded for ${newHolidayDate}.`);
+      return;
+    }
+    const newHol: GovernmentHoliday = {
+      id: 'hol_' + Date.now(),
+      date: newHolidayDate,
+      name: newHolidayName.trim()
+    };
+    const updatedHolidays = [...(formData.holidays || []), newHol].sort((a, b) => a.date.localeCompare(b.date));
+    setFormData({ ...formData, holidays: updatedHolidays });
+    setNewHolidayName('');
+  };
+
+  const handleDeleteHoliday = (id: string) => {
+    const updatedHolidays = (formData.holidays || []).filter(h => h.id !== id);
+    setFormData({ ...formData, holidays: updatedHolidays });
+  };
+
+  // Student Attendance History Visibility Permissions
+  const [studentAttendanceSearchTerm, setStudentAttendanceSearchTerm] = useState('');
+  const [studentAttendanceFilter, setStudentAttendanceFilter] = useState<'all' | 'granted' | 'hidden'>('all');
+
+  const handleToggleStudentAttendanceAccess = (studentId: string) => {
+    const current = formData.allowedAttendanceStudentIds || [];
+    let updated: string[];
+    if (current.includes(studentId)) {
+      updated = current.filter(id => id !== studentId);
+    } else {
+      updated = [...current, studentId];
+    }
+    setFormData({ ...formData, allowedAttendanceStudentIds: updated });
+  };
+
+  const handleGrantAllAttendanceAccess = () => {
+    const allIds = students.map(s => s.id);
+    setFormData({ ...formData, allowedAttendanceStudentIds: allIds });
+  };
+
+  const handleRevokeAllAttendanceAccess = () => {
+    setFormData({ ...formData, allowedAttendanceStudentIds: [] });
+  };
+
   // Sync formData whenever settings prop updates
   React.useEffect(() => {
     setFormData({
@@ -138,9 +204,11 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
       weekOffDays: settings.weekOffDays || ['Sunday'],
       lunchBreak: settings.lunchBreak || { start: '01:00 PM', end: '02:00 PM' },
       leaves: settings.leaves || [],
+      holidays: settings.holidays || [],
       shiftTimingWeekday: settings.shiftTimingWeekday || { start: '09:00 AM', end: '06:00 PM' },
       shiftTimingWeekend: settings.shiftTimingWeekend || { start: '10:00 AM', end: '04:00 PM' },
-      allowedPercentageStudentIds: settings.allowedPercentageStudentIds || []
+      allowedPercentageStudentIds: settings.allowedPercentageStudentIds || [],
+      allowedAttendanceStudentIds: settings.allowedAttendanceStudentIds || []
     });
   }, [settings]);
 
@@ -664,6 +732,109 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
             </div>
           </div>
 
+          {/* Card: Government & Public Holidays Management */}
+          <div className="bg-white border border-[#d9e0e7] rounded-lg p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center space-x-2">
+                <CalendarDays className="w-4 h-4 text-rose-600" />
+                <h2 className="text-sm font-bold text-slate-800">Government & Public Holidays</h2>
+              </div>
+              <span className="text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-0.5 rounded-full">
+                {(formData.holidays || []).length} Official Holidays
+              </span>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <p className="text-slate-500 text-[11px]">
+                On declared government and public holidays, the academy is closed. Attendance registers, schedules, and student portals automatically mark the date as a Holiday (just like scheduled week-offs). For weekend batches, holiday deductions apply accordingly.
+              </p>
+
+              {/* Add New Holiday Form */}
+              <div className="bg-rose-50/60 p-3 rounded-lg border border-rose-200/80 space-y-2.5">
+                <span className="font-semibold text-rose-900 block text-[11px] flex items-center gap-1.5">
+                  <Plus className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Declare New Government / Public Holiday</span>
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Holiday Date</label>
+                    <input
+                      type="date"
+                      value={newHolidayDate}
+                      onChange={e => setNewHolidayDate(e.target.value)}
+                      className="w-full p-1.5 bg-white border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-rose-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Holiday Name / Occasion</label>
+                    <input
+                      type="text"
+                      value={newHolidayName}
+                      onChange={e => setNewHolidayName(e.target.value)}
+                      placeholder="e.g. Independence Day, Pongal, Gandhi Jayanti"
+                      className="w-full p-1.5 bg-white border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-rose-500"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddHoliday}
+                  className="w-full py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Public Holiday</span>
+                </button>
+              </div>
+
+              {/* Holidays List */}
+              <div className="space-y-2">
+                <span className="font-semibold text-slate-700 block text-[11px] flex items-center justify-between">
+                  <span>Registered Official Holidays:</span>
+                  <span className="text-slate-400 font-normal">{(formData.holidays || []).length} days declared</span>
+                </span>
+
+                {(formData.holidays || []).length === 0 ? (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded text-center text-slate-400 text-[11px]">
+                    No official holidays declared yet.
+                  </div>
+                ) : (
+                  <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-md">
+                    {(formData.holidays || []).map(hol => {
+                      const dayName = new Date(hol.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+                      const isWeekendDay = dayName === 'Saturday' || dayName === 'Sunday';
+                      return (
+                        <div key={hol.id} className="p-2.5 bg-white hover:bg-slate-50 flex items-center justify-between text-xs transition-colors">
+                          <div>
+                            <div className="font-bold text-slate-800 flex items-center gap-2">
+                              <span>{hol.date}</span>
+                              <span className="text-[10px] text-slate-500 font-normal">
+                                ({dayName})
+                              </span>
+                              {isWeekendDay && (
+                                <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded font-semibold">
+                                  Weekend Holiday
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-rose-800 font-semibold">{hol.name}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteHoliday(hol.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Remove holiday"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Card: Attendance & Batch Policies */}
           <div className="bg-white border border-[#d9e0e7] rounded-lg p-5 shadow-xs space-y-4">
             <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
@@ -926,6 +1097,159 @@ export const TrainerSettings: React.FC<TrainerSettingsProps> = ({
                               <>
                                 <EyeOff className="w-3.5 h-3.5" />
                                 <span>Hidden</span>
+                              </>
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Card: Student Attendance History Visibility Permissions */}
+        <div className="bg-white border border-[#d9e0e7] rounded-lg p-5 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-slate-100 gap-2">
+            <div className="flex items-center space-x-2">
+              <ShieldCheck className="w-4 h-4 text-[#0a6ed1]" />
+              <h2 className="text-sm font-bold text-slate-800">
+                Student Attendance History Transcript Permissions
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                {(formData.allowedAttendanceStudentIds || []).length} of {students.length} students authorized
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded p-3 text-xs text-slate-600">
+            <p className="text-[11px] leading-relaxed">
+              <strong>Institution Policy:</strong> By default, detailed attendance history logs and session transcripts are locked for students. Only students you explicitly authorize below will be able to open and inspect their "My Attendance Register" page in their portal.
+            </p>
+          </div>
+
+          {/* Search & Bulk Grant Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs pt-1">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+              <input
+                type="text"
+                value={studentAttendanceSearchTerm}
+                onChange={e => setStudentAttendanceSearchTerm(e.target.value)}
+                placeholder="Search by student name, course, or timing..."
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+              />
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <div className="flex bg-slate-100 p-0.5 rounded border border-slate-200 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setStudentAttendanceFilter('all')}
+                  className={`px-2 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                    studentAttendanceFilter === 'all' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-600 hover:text-slate-800'
+                  }`}
+                >
+                  All ({students.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStudentAttendanceFilter('granted')}
+                  className={`px-2 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                    studentAttendanceFilter === 'granted' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-600 hover:text-slate-800'
+                  }`}
+                >
+                  Authorized ({(formData.allowedAttendanceStudentIds || []).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStudentAttendanceFilter('hidden')}
+                  className={`px-2 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                    studentAttendanceFilter === 'hidden' ? 'bg-white text-slate-700 shadow-2xs' : 'text-slate-600 hover:text-slate-800'
+                  }`}
+                >
+                  Locked ({Math.max(0, students.length - (formData.allowedAttendanceStudentIds || []).length)})
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleGrantAllAttendanceAccess}
+                className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded font-semibold text-[11px] transition-colors cursor-pointer"
+              >
+                Authorize All
+              </button>
+              <button
+                type="button"
+                onClick={handleRevokeAllAttendanceAccess}
+                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded font-semibold text-[11px] transition-colors cursor-pointer"
+              >
+                Lock for All
+              </button>
+            </div>
+          </div>
+
+          {/* Student List with Individual Toggles */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden max-h-80 overflow-y-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 text-slate-600 font-semibold sticky top-0 border-b border-slate-200">
+                <tr>
+                  <th className="py-2.5 px-3">Student Name</th>
+                  <th className="py-2.5 px-3">Course</th>
+                  <th className="py-2.5 px-3">Timing & Batch</th>
+                  <th className="py-2.5 px-3 text-center">Logged Sessions</th>
+                  <th className="py-2.5 px-3 text-right">Attendance Register Access</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {students
+                  .filter(std => {
+                    const matchesSearch =
+                      std.name.toLowerCase().includes(studentAttendanceSearchTerm.toLowerCase()) ||
+                      std.course.toLowerCase().includes(studentAttendanceSearchTerm.toLowerCase()) ||
+                      std.timing.toLowerCase().includes(studentAttendanceSearchTerm.toLowerCase());
+                    const isAuthorized = (formData.allowedAttendanceStudentIds || []).includes(std.id);
+                    if (studentAttendanceFilter === 'granted') return matchesSearch && isAuthorized;
+                    if (studentAttendanceFilter === 'hidden') return matchesSearch && !isAuthorized;
+                    return matchesSearch;
+                  })
+                  .map(std => {
+                    const isAuthorized = (formData.allowedAttendanceStudentIds || []).includes(std.id);
+                    const stdAttendanceCount = attendance.filter(a => a.studentId === std.id).length;
+                    return (
+                      <tr key={std.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-2.5 px-3 font-semibold text-slate-800">
+                          {std.name}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-600">{std.course}</td>
+                        <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
+                          {std.timing} ({std.mode})
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="font-mono text-slate-600 text-xs">{stdAttendanceCount} sessions</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStudentAttendanceAccess(std.id)}
+                            className={`px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ml-auto ${
+                              isAuthorized
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs'
+                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-300'
+                            }`}
+                          >
+                            {isAuthorized ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Authorized (Unlocked)</span>
+                              </>
+                            ) : (
+                              <>
+                                <Lock className="w-3.5 h-3.5" />
+                                <span>Locked</span>
                               </>
                             )}
                           </button>

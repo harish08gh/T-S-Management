@@ -4,7 +4,8 @@ import {
   ClassLink,
   AttendanceRecord,
   CourseCompletionSettings,
-  StudentTab
+  StudentTab,
+  GovernmentHoliday
 } from '../../types';
 import {
   Link2,
@@ -25,7 +26,9 @@ import {
   User,
   Search,
   Filter,
-  RotateCcw
+  RotateCcw,
+  FileQuestion,
+  Tag
 } from 'lucide-react';
 import {
   isWeekend as checkIsWeekend,
@@ -33,7 +36,8 @@ import {
   getStudentEffectiveTiming,
   isStudentScheduledOnDate,
   getStudentNextClassInfo,
-  isStudentInClassWindow
+  isStudentInClassWindow,
+  getGovernmentHoliday
 } from '../../utils/scheduleUtils';
 
 interface StudentPortalProps {
@@ -42,9 +46,11 @@ interface StudentPortalProps {
   isClassLinkActive: boolean;
   attendanceRecords: AttendanceRecord[];
   completionSettings: CourseCompletionSettings;
-  onStudentTouchLink: (studentId: string) => Promise<void>;
+  onStudentTouchLink: (studentId: string, absenceReason?: string, missedRecordIds?: string[]) => Promise<void>;
   todayStr: string;
   allowedPercentageStudentIds?: string[];
+  allowedAttendanceStudentIds?: string[];
+  holidays?: GovernmentHoliday[];
 }
 
 export const StudentPortal: React.FC<StudentPortalProps> = ({
@@ -55,10 +61,15 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   completionSettings,
   onStudentTouchLink,
   todayStr,
-  allowedPercentageStudentIds = []
+  allowedPercentageStudentIds = [],
+  allowedAttendanceStudentIds = [],
+  holidays = []
 }) => {
   const [activeTab, setActiveTab] = useState<StudentTab>('student_dashboard');
   const [showTouchConfirmModal, setShowTouchConfirmModal] = useState(false);
+  const [showAbsenceReasonModal, setShowAbsenceReasonModal] = useState(false);
+  const [absenceReasonText, setAbsenceReasonText] = useState('');
+  const [absenceReasonError, setAbsenceReasonError] = useState('');
   const [attendanceJustMarked, setAttendanceJustMarked] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
@@ -74,6 +85,15 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     currentStudent.showCompletionPercentage ||
     allowedPercentageStudentIds.includes(currentStudent.id)
   );
+
+  // Attendance History Visibility Access (Trainer controlled)
+  const isAttendanceHistoryVisible = Boolean(
+    currentStudent.showAttendanceHistory ||
+    allowedAttendanceStudentIds.includes(currentStudent.id)
+  );
+
+  // Check if today is a government holiday
+  const todayHoliday = getGovernmentHoliday(todayStr, holidays);
 
   // Keep live time updated for class window checks
   useEffect(() => {
@@ -96,6 +116,42 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     a => a.studentId === currentStudent.id && a.date === todayStr
   );
   const hasAttendedToday = todayRecord && todayRecord.attendance === 'Present';
+
+  // Check if student was absent in previous session(s) without explanation
+  const recentUnexplainedAbsences = useMemo(() => {
+    const pastRecords = [...attendanceRecords]
+      .filter(a => a.date < todayStr)
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    const unexplained: AttendanceRecord[] = [];
+    for (const rec of pastRecords) {
+      if (rec.attendance === 'Absent' && (!rec.absenceReason || rec.absenceReason.trim() === '')) {
+        unexplained.push(rec);
+      } else {
+        break;
+      }
+    }
+    return unexplained;
+  }, [attendanceRecords, todayStr]);
+
+  const absenceDatesSummary = useMemo(() => {
+    if (recentUnexplainedAbsences.length === 0) return null;
+    const sorted = [...recentUnexplainedAbsences].sort((a, b) => a.date.localeCompare(b.date));
+    if (sorted.length === 1) {
+      return {
+        isRange: false,
+        text: sorted[0].date,
+        count: 1,
+        recordIds: sorted.map(r => r.id)
+      };
+    }
+    return {
+      isRange: true,
+      text: `${sorted[0].date} to ${sorted[sorted.length - 1].date}`,
+      count: sorted.length,
+      recordIds: sorted.map(r => r.id)
+    };
+  }, [recentUnexplainedAbsences]);
 
   // Attendance stats and filtered records
   const filteredAttendanceRecords = useMemo(() => {
@@ -127,7 +183,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
   // Touch Link handler
   const handleInitiateTouchLink = () => {
-    setShowTouchConfirmModal(true);
+    if (absenceDatesSummary) {
+      setAbsenceReasonText('');
+      setAbsenceReasonError('');
+      setShowAbsenceReasonModal(true);
+    } else {
+      setShowTouchConfirmModal(true);
+    }
   };
 
   const handleConfirmTouchAndJoin = async () => {
@@ -135,10 +197,29 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       await onStudentTouchLink(currentStudent.id);
       setAttendanceJustMarked(true);
       setShowTouchConfirmModal(false);
-      // Open meeting in new tab
       window.open(classLink.url, '_blank', 'noopener,noreferrer');
     } catch (e) {
       console.error('Error logging touch link attendance:', e);
+      window.open(classLink.url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const handleSubmitAbsenceReasonAndJoin = async () => {
+    if (!absenceReasonText.trim()) {
+      setAbsenceReasonError('Please enter a brief explanation for your previous absence.');
+      return;
+    }
+    try {
+      await onStudentTouchLink(
+        currentStudent.id,
+        absenceReasonText.trim(),
+        absenceDatesSummary?.recordIds || []
+      );
+      setAttendanceJustMarked(true);
+      setShowAbsenceReasonModal(false);
+      window.open(classLink.url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      console.error('Error recording absence reason & touch link:', e);
       window.open(classLink.url, '_blank', 'noopener,noreferrer');
     }
   };
@@ -261,6 +342,11 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           >
             <CalendarCheck2 className="w-3.5 h-3.5" />
             <span>My Attendance Register</span>
+            {!isAttendanceHistoryVisible && (
+              <span className="inline-flex items-center gap-0.5 text-[9px] bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded font-medium ml-1">
+                <Lock className="w-2.5 h-2.5" /> Locked
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('student_completion')}
@@ -308,7 +394,22 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
             <div className="p-6 space-y-5">
               {/* Session / Schedule Status Banners */}
-              {!isScheduledToday ? (
+              {todayHoliday ? (
+                <div className="bg-rose-50 border border-rose-300 rounded-lg p-3.5 flex items-start space-x-3 text-xs text-rose-900 shadow-2xs">
+                  <Calendar className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold flex items-center gap-2">
+                      <span>Government & Public Holiday Today</span>
+                      <span className="text-[10px] bg-rose-200 text-rose-900 font-bold px-2 py-0.2 rounded-full">
+                        {todayHoliday.name}
+                      </span>
+                    </div>
+                    <p className="text-rose-800 text-[11px] mt-0.5">
+                      Today is an official holiday (<strong>{todayHoliday.name}</strong>). Regular academy training batches are closed today.
+                    </p>
+                  </div>
+                </div>
+              ) : !isScheduledToday ? (
                 <div className="bg-amber-50 border border-amber-300 rounded-lg p-3.5 flex items-start space-x-3 text-xs text-amber-900 shadow-2xs">
                   <Calendar className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                   <div>
@@ -334,7 +435,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                       </span>
                     </div>
                     <p className="text-amber-800 text-[11px] mt-0.5">
-                      The trainer updates today's live classroom link each morning. Please check back shortly before your scheduled batch time: <strong>{effectiveTimingToday}</strong>.
+                      The trainer updates today's live classroom link each morning. Please check back at your scheduled batch time: <strong>{effectiveTimingToday}</strong>.
                     </p>
                   </div>
                 </div>
@@ -343,13 +444,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   <Clock className="w-5 h-5 text-[#0a6ed1] shrink-0 mt-0.5" />
                   <div>
                     <div className="font-bold flex items-center gap-2">
-                      <span>Class Link Locked Until Scheduled Time</span>
+                      <span>Class Link Locked Until Exact Scheduled Time</span>
                       <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.2 rounded-full">
                         Scheduled at {effectiveTimingToday}
                       </span>
                     </div>
                     <p className="text-blue-800 text-[11px] mt-0.5">
-                      The live meeting link and touch-attendance button will automatically unlock <strong>15 minutes</strong> before your session starts.
+                      The live meeting link will unlock strictly at your exact session start time (<strong>{effectiveTimingToday}</strong>). Access is restricted prior to start time to maintain precise attendance records.
                       {classWindow.startsInMinutes > 0 && (
                         <span className="font-semibold block mt-1 text-[#0a6ed1]">
                           ⏳ Opens in approximately {Math.floor(classWindow.startsInMinutes / 60) > 0 ? `${Math.floor(classWindow.startsInMinutes / 60)} hr ` : ''}{classWindow.startsInMinutes % 60} min.
@@ -513,195 +614,231 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       )}
 
       {/* TAB 2: ATTENDANCE TRACKING (STUDENT VIEW MODE WITH FILTERS) */}
-      {/* "students can see their attendence in view mode need to view only date, attendance, class time." */}
+      {/* "don't show attendance history for student with out trainer permission." */}
       {activeTab === 'student_attendance' && (
         <div className="space-y-4">
-          {/* Header & Quick Summary KPIs */}
-          <div className="bg-white border border-[#d9e0e7] rounded-lg p-5 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-100">
-              <div>
-                <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                  <CalendarCheck2 className="w-4 h-4 text-[#0a6ed1]" />
-                  <span>My Attendance Register</span>
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Official view-only attendance transcript for {currentStudent.course}
-                </p>
+          {!isAttendanceHistoryVisible ? (
+            <div className="bg-white border border-[#d9e0e7] rounded-lg p-10 shadow-xs text-center max-w-lg mx-auto space-y-4">
+              <div className="w-14 h-14 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
+                <Lock className="w-7 h-7" />
               </div>
-
-              {/* Attendance Quick Stats */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded text-xs">
-                  <span className="text-slate-500 text-[11px] block">Total Sessions</span>
-                  <strong className="text-slate-800 font-mono text-sm">{attendanceRecords.length}</strong>
+              <h2 className="text-lg font-bold text-slate-800">Attendance Transcript Locked</h2>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                By institutional policy, detailed attendance register logs and history transcripts are restricted. Access is granted solely with explicit trainer authorization.
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded p-3.5 text-xs text-amber-900 text-left flex items-start gap-2.5">
+                <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Need your attendance report?</span>
+                  <span className="text-[11px] text-amber-800">
+                    Please request your course trainer (<strong>{currentStudent.trainerName}</strong>) to enable attendance transcript visibility for your profile in Trainer Settings.
+                  </span>
                 </div>
-                <div className="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded text-xs">
-                  <span className="text-emerald-700 text-[11px] block">Present</span>
-                  <strong className="text-emerald-800 font-mono text-sm">{presentCount} ({attRate}%)</strong>
-                </div>
-                <div className="bg-rose-50 border border-rose-200 px-3 py-1.5 rounded text-xs">
-                  <span className="text-rose-700 text-[11px] block">Absent</span>
-                  <strong className="text-rose-800 font-mono text-sm">{absentCount}</strong>
-                </div>
+              </div>
+              <div className="pt-2">
+                <button
+                  onClick={() => setActiveTab('student_dashboard')}
+                  className="px-4 py-2 bg-[#0a6ed1] hover:bg-[#0854a0] text-white rounded text-xs font-semibold cursor-pointer shadow-xs"
+                >
+                  Return to Dashboard
+                </button>
               </div>
             </div>
+          ) : (
+            <>
+              {/* Header & Quick Summary KPIs */}
+              <div className="bg-white border border-[#d9e0e7] rounded-lg p-5 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-100">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                      <CalendarCheck2 className="w-4 h-4 text-[#0a6ed1]" />
+                      <span>My Attendance Register</span>
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Official view-only attendance transcript for {currentStudent.course}
+                    </p>
+                  </div>
 
-            {/* Attendance Filters Bar */}
-            <div className="pt-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-              {/* Search by Topic or Date */}
-              <div className="relative flex-1 max-w-sm">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                <input
-                  type="text"
-                  value={attSearchTerm}
-                  onChange={e => setAttSearchTerm(e.target.value)}
-                  placeholder="Filter by date (YYYY-MM-DD) or topic..."
-                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
-                />
-              </div>
-
-              {/* Status & Period Filters */}
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Status Filter */}
-                <div className="flex items-center space-x-1 bg-slate-100 p-0.5 rounded border border-slate-200">
-                  <span className="text-[10px] text-slate-500 font-semibold px-1.5">Status:</span>
-                  <button
-                    onClick={() => setAttStatusFilter('ALL')}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                      attStatusFilter === 'ALL' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-600 hover:text-slate-800'
-                    }`}
-                  >
-                    All
-                  </button>
-                  <button
-                    onClick={() => setAttStatusFilter('Present')}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                      attStatusFilter === 'Present' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-600 hover:text-emerald-700'
-                    }`}
-                  >
-                    Present ({presentCount})
-                  </button>
-                  <button
-                    onClick={() => setAttStatusFilter('Absent')}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                      attStatusFilter === 'Absent' ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-600 hover:text-rose-700'
-                    }`}
-                  >
-                    Absent ({absentCount})
-                  </button>
+                  {/* Attendance Quick Stats */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded text-xs">
+                      <span className="text-slate-500 text-[11px] block">Total Sessions</span>
+                      <strong className="text-slate-800 font-mono text-sm">{attendanceRecords.length}</strong>
+                    </div>
+                    <div className="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded text-xs">
+                      <span className="text-emerald-700 text-[11px] block">Present</span>
+                      <strong className="text-emerald-800 font-mono text-sm">{presentCount} ({attRate}%)</strong>
+                    </div>
+                    <div className="bg-rose-50 border border-rose-200 px-3 py-1.5 rounded text-xs">
+                      <span className="text-rose-700 text-[11px] block">Absent</span>
+                      <strong className="text-rose-800 font-mono text-sm">{absentCount}</strong>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Period Filter */}
-                <div className="flex items-center space-x-1 bg-slate-100 p-0.5 rounded border border-slate-200">
-                  <span className="text-[10px] text-slate-500 font-semibold px-1.5">Period:</span>
-                  <button
-                    onClick={() => setAttDateFilter('ALL')}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                      attDateFilter === 'ALL' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-600 hover:text-slate-800'
-                    }`}
-                  >
-                    All Time
-                  </button>
-                  <button
-                    onClick={() => setAttDateFilter('THIS_MONTH')}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                      attDateFilter === 'THIS_MONTH' ? 'bg-white text-blue-800 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-800'
-                    }`}
-                  >
-                    This Month
-                  </button>
-                  <button
-                    onClick={() => setAttDateFilter('LAST_30_DAYS')}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                      attDateFilter === 'LAST_30_DAYS' ? 'bg-white text-blue-800 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-800'
-                    }`}
-                  >
-                    Last 30 Days
-                  </button>
+                {/* Attendance Filters Bar */}
+                <div className="pt-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                  {/* Search by Topic or Date */}
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      value={attSearchTerm}
+                      onChange={e => setAttSearchTerm(e.target.value)}
+                      placeholder="Filter by date (YYYY-MM-DD) or topic..."
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1]"
+                    />
+                  </div>
+
+                  {/* Status & Period Filters */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Status Filter */}
+                    <div className="flex items-center space-x-1 bg-slate-100 p-0.5 rounded border border-slate-200">
+                      <span className="text-[10px] text-slate-500 font-semibold px-1.5">Status:</span>
+                      <button
+                        onClick={() => setAttStatusFilter('ALL')}
+                        className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                          attStatusFilter === 'ALL' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-600 hover:text-slate-800'
+                        }`}
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => setAttStatusFilter('Present')}
+                        className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                          attStatusFilter === 'Present' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-600 hover:text-emerald-700'
+                        }`}
+                      >
+                        Present ({presentCount})
+                      </button>
+                      <button
+                        onClick={() => setAttStatusFilter('Absent')}
+                        className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                          attStatusFilter === 'Absent' ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-600 hover:text-rose-700'
+                        }`}
+                      >
+                        Absent ({absentCount})
+                      </button>
+                    </div>
+
+                    {/* Period Filter */}
+                    <div className="flex items-center space-x-1 bg-slate-100 p-0.5 rounded border border-slate-200">
+                      <span className="text-[10px] text-slate-500 font-semibold px-1.5">Period:</span>
+                      <button
+                        onClick={() => setAttDateFilter('ALL')}
+                        className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                          attDateFilter === 'ALL' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-600 hover:text-slate-800'
+                        }`}
+                      >
+                        All Time
+                      </button>
+                      <button
+                        onClick={() => setAttDateFilter('THIS_MONTH')}
+                        className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                          attDateFilter === 'THIS_MONTH' ? 'bg-white text-blue-800 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-800'
+                        }`}
+                      >
+                        This Month
+                      </button>
+                      <button
+                        onClick={() => setAttDateFilter('LAST_30_DAYS')}
+                        className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                          attDateFilter === 'LAST_30_DAYS' ? 'bg-white text-blue-800 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-800'
+                        }`}
+                      >
+                        Last 30 Days
+                      </button>
+                    </div>
+
+                    {/* Reset Filter Button */}
+                    {(attStatusFilter !== 'ALL' || attDateFilter !== 'ALL' || attSearchTerm) && (
+                      <button
+                        onClick={() => {
+                          setAttStatusFilter('ALL');
+                          setAttDateFilter('ALL');
+                          setAttSearchTerm('');
+                        }}
+                        className="p-1.5 text-slate-500 hover:text-slate-800 bg-white border border-slate-200 rounded hover:bg-slate-50 transition-colors cursor-pointer"
+                        title="Reset all filters"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-
-                {/* Reset Filter Button */}
-                {(attStatusFilter !== 'ALL' || attDateFilter !== 'ALL' || attSearchTerm) && (
-                  <button
-                    onClick={() => {
-                      setAttStatusFilter('ALL');
-                      setAttDateFilter('ALL');
-                      setAttSearchTerm('');
-                    }}
-                    className="p-1.5 text-slate-500 hover:text-slate-800 bg-white border border-slate-200 rounded hover:bg-slate-50 transition-colors cursor-pointer"
-                    title="Reset all filters"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                  </button>
-                )}
               </div>
-            </div>
-          </div>
 
-          <div className="bg-white border border-[#d9e0e7] rounded-lg shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="fiori-table-header">
-                    <th className="py-3 px-4 w-12 text-center">#</th>
-                    <th className="py-3 px-4 min-w-[120px]">Date</th>
-                    <th className="py-3 px-4 min-w-[120px]">Class Time</th>
-                    <th className="py-3 px-4 min-w-[130px]">Attendance</th>
-                    <th className="py-3 px-4 min-w-[240px]">Topic Covered</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#eef2f6]">
-                  {filteredAttendanceRecords.length > 0 ? (
-                    filteredAttendanceRecords.map((att, idx) => (
-                      <tr key={att.id} className="fiori-table-row">
-                        <td className="py-3 px-4 text-center font-mono text-slate-400">
-                          {idx + 1}
-                        </td>
-                        <td className="py-3 px-4 font-mono font-semibold text-slate-800">
-                          {att.date}
-                        </td>
-                        <td className="py-3 px-4 font-mono text-slate-600">
-                          {att.time}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold ${
-                            att.attendance === 'Present'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : 'bg-rose-100 text-rose-800 border border-rose-200'
-                          }`}>
-                            {att.attendance === 'Present' ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
-                            ) : (
-                              <AlertCircle className="w-3.5 h-3.5 mr-1 text-rose-600" />
-                            )}
-                            {att.attendance}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-700">
-                          {att.topicCovered || 'Regular Curriculum Session'}
-                        </td>
+              <div className="bg-white border border-[#d9e0e7] rounded-lg shadow-xs overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="fiori-table-header">
+                        <th className="py-3 px-4 w-12 text-center">#</th>
+                        <th className="py-3 px-4 min-w-[120px]">Date</th>
+                        <th className="py-3 px-4 min-w-[120px]">Class Time</th>
+                        <th className="py-3 px-4 min-w-[130px]">Attendance</th>
+                        <th className="py-3 px-4 min-w-[240px]">Topic Covered & Remarks</th>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={5} className="py-10 text-center text-slate-400">
-                        {attendanceRecords.length > 0
-                          ? 'No attendance records match the selected filter.'
-                          : 'No attendance entries recorded yet.'}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody className="divide-y divide-[#eef2f6]">
+                      {filteredAttendanceRecords.length > 0 ? (
+                        filteredAttendanceRecords.map((att, idx) => (
+                          <tr key={att.id} className="fiori-table-row">
+                            <td className="py-3 px-4 text-center font-mono text-slate-400">
+                              {idx + 1}
+                            </td>
+                            <td className="py-3 px-4 font-mono font-semibold text-slate-800">
+                              {att.date}
+                            </td>
+                            <td className="py-3 px-4 font-mono text-slate-600">
+                              {att.time}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold ${
+                                att.attendance === 'Present'
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : 'bg-rose-100 text-rose-800 border border-rose-200'
+                              }`}>
+                                {att.attendance === 'Present' ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                                ) : (
+                                  <AlertCircle className="w-3.5 h-3.5 mr-1 text-rose-600" />
+                                )}
+                                {att.attendance}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-700">
+                              <div>{att.topicCovered || 'Regular Curriculum Session'}</div>
+                              {att.absenceReason && (
+                                <div className="mt-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 inline-block">
+                                  <strong>Absence Reason:</strong> {att.absenceReason}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="py-10 text-center text-slate-400">
+                            {attendanceRecords.length > 0
+                              ? 'No attendance records match the selected filter.'
+                              : 'No attendance entries recorded yet.'}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
-            <div className="bg-[#f8fafc] px-4 py-3 border-t border-[#d9e0e7] text-xs text-slate-500 flex items-center justify-between">
-              <span>
-                Showing {filteredAttendanceRecords.length} of {attendanceRecords.length} session entries
-              </span>
-              <span>Read-only transcript mode. Attendance is recorded when you touch the live class link.</span>
-            </div>
-          </div>
+                <div className="bg-[#f8fafc] px-4 py-3 border-t border-[#d9e0e7] text-xs text-slate-500 flex items-center justify-between">
+                  <span>
+                    Showing {filteredAttendanceRecords.length} of {attendanceRecords.length} session entries
+                  </span>
+                  <span>Read-only transcript mode. Attendance is recorded when you touch the live class link.</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -848,6 +985,117 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ABSENCE REASON PROMPT MODAL: TRIGGERED WHEN STUDENT WAS ABSENT IN PREVIOUS SESSION(S) */}
+      {showAbsenceReasonModal && absenceDatesSummary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-lg shadow-2xl border border-slate-300 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-[#1d2d3e] text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <FileQuestion className="w-5 h-5 text-amber-400" />
+                <h3 className="text-sm font-bold">Reason for Previous Absence Required</h3>
+              </div>
+              <span className="text-[10px] bg-rose-600 text-white font-bold px-2 py-0.5 rounded">
+                Action Required
+              </span>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs text-slate-700">
+              <div className="bg-rose-50 border border-rose-200 rounded-lg p-3.5 text-rose-900 space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-rose-800">
+                  <AlertCircle className="w-4 h-4 text-rose-600" />
+                  <span>
+                    Unexcused Absence Detected ({absenceDatesSummary.count} {absenceDatesSummary.count === 1 ? 'day' : 'days'})
+                  </span>
+                </div>
+                <p className="text-[11px] text-rose-800 leading-relaxed">
+                  Our attendance register indicates you were absent on{' '}
+                  <strong className="underline font-mono">{absenceDatesSummary.text}</strong>.
+                  Before you can enter today's live class, please provide the reason for your absence:
+                </p>
+              </div>
+
+              {/* Quick Reason Suggestions */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <Tag className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Quick Pick Reason:</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'Health / Medical Issue',
+                    'Severe Fever / Doctor Visit',
+                    'Family Emergency',
+                    'Office / Work Overtime Conflict',
+                    'College / University Semester Exam',
+                    'Internet / Broadband Power Outage',
+                    'Out of Town / Travel',
+                    'Personal Emergency'
+                  ].map(reason => (
+                    <button
+                      key={reason}
+                      type="button"
+                      onClick={() => {
+                        setAbsenceReasonText(reason);
+                        setAbsenceReasonError('');
+                      }}
+                      className={`px-2 py-1 rounded text-[11px] border transition-colors cursor-pointer ${
+                        absenceReasonText === reason
+                          ? 'bg-[#0a6ed1] text-white border-[#0a6ed1] font-semibold'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reason Explanation Textarea */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Explanation Note for Trainer: <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  value={absenceReasonText}
+                  onChange={e => {
+                    setAbsenceReasonText(e.target.value);
+                    if (absenceReasonError) setAbsenceReasonError('');
+                  }}
+                  rows={3}
+                  placeholder="e.g. Could not attend due to severe migraine and hospital checkup..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0a6ed1] text-slate-800 resize-none"
+                />
+                {absenceReasonError && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-semibold">{absenceReasonError}</p>
+                )}
+              </div>
+
+              <div className="bg-emerald-50 border border-emerald-200 rounded p-2.5 text-[11px] text-emerald-800">
+                Submitting this reason will record your explanation in past attendance logs and immediately mark you <strong>Present</strong> for today's session.
+              </div>
+
+              <div className="pt-2 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAbsenceReasonModal(false)}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitAbsenceReasonAndJoin}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Submit Reason & Join Class</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
