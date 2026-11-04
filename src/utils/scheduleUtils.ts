@@ -1,7 +1,7 @@
 /**
  * Schedule & Timing Utilities for Weekdays / Weekend Class Management
  */
-import { Student, ClassMode } from '../types';
+import { Student, ClassMode, AttendanceRecord } from '../types';
 
 /**
  * Checks if a date (YYYY-MM-DD or Date object) falls on a weekend (Saturday or Sunday)
@@ -156,6 +156,36 @@ export function parseTimePartToMinutes(timeStr: string, isEndSlot = false, start
   return hour * 60 + min;
 }
 
+export function parseTimeToMinutes(timeStr: string): number | null {
+  if (!timeStr) return null;
+  const match = timeStr.trim().match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i);
+  if (!match) {
+    const singleMatch = timeStr.trim().match(/(\d{1,2})(?:\s*(AM|PM))/i);
+    if (!singleMatch) return null;
+    let hour = parseInt(singleMatch[1], 10);
+    const meridiem = singleMatch[2]?.toUpperCase();
+    if (meridiem === 'PM' && hour < 12) hour += 12;
+    if (meridiem === 'AM' && hour === 12) hour = 0;
+    return hour * 60;
+  }
+  let hour = parseInt(match[1], 10);
+  const min = parseInt(match[2], 10);
+  const meridiem = match[3]?.toUpperCase();
+  if (meridiem === 'PM' && hour < 12) hour += 12;
+  if (meridiem === 'AM' && hour === 12) hour = 0;
+  return hour * 60 + min;
+}
+
+export function parseClassRange(timingStr: string): { startMin: number; endMin: number } | null {
+  if (!timingStr) return null;
+  const parts = timingStr.split(/[-–—to]/i);
+  const startMin = parseTimeToMinutes(parts[0]);
+  if (startMin === null) return null;
+  let endMin = parts[1] ? parseTimeToMinutes(parts[1]) : startMin + 60;
+  if (endMin === null) endMin = startMin + 60;
+  return { startMin, endMin };
+}
+
 export interface ClassWindowStatus {
   inWindow: boolean;
   status: 'before' | 'active' | 'after';
@@ -227,6 +257,94 @@ export function isStudentInClassWindow(
     endsInMinutes: 0,
     activeSlot,
     rawTiming: timingStr
+  };
+}
+
+/**
+  * Formats YYYY-MM-DD string to DD/MM/YYYY
+  */
+export function formatDDMMYYYY(dateStr: string): string {
+  if (!dateStr) return '';
+  const parts = dateStr.trim().split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
+}
+
+export interface LastCoveredTopicInfo {
+  topic: string;
+  date: string | null;
+  attendanceStatus?: 'Present' | 'Absent';
+  hasRecord: boolean;
+}
+
+/**
+ * Returns the topic covered in the last class for a student based on attendance records.
+ * Prioritizes records before referenceDateStr with an explicitly recorded topic.
+ */
+export function getLastCoveredTopic(
+  studentId: string,
+  attendance: AttendanceRecord[],
+  referenceDateStr?: string
+): LastCoveredTopicInfo {
+  if (!attendance || attendance.length === 0) {
+    return {
+      topic: 'No previous session recorded (First class)',
+      date: null,
+      hasRecord: false
+    };
+  }
+
+  const studentRecords = attendance.filter(a => a.studentId === studentId);
+  if (studentRecords.length === 0) {
+    return {
+      topic: 'No previous session recorded (First class)',
+      date: null,
+      hasRecord: false
+    };
+  }
+
+  // Sort descending by date (latest first)
+  const sorted = [...studentRecords].sort((a, b) => {
+    const diff = b.date.localeCompare(a.date);
+    if (diff !== 0) return diff;
+    return (b.id || '').localeCompare(a.id || '');
+  });
+
+  // 1. Look for a record strictly before referenceDateStr that has a non-empty topic
+  let record = referenceDateStr
+    ? sorted.find(r => r.date < referenceDateStr && r.topicCovered && r.topicCovered.trim().length > 0)
+    : sorted.find(r => r.topicCovered && r.topicCovered.trim().length > 0);
+
+  // 2. If none before referenceDateStr had a custom topic, find any record before referenceDateStr
+  if (!record && referenceDateStr) {
+    record = sorted.find(r => r.date < referenceDateStr);
+  }
+
+  // 3. Fallback to any record with an explicit topic
+  if (!record) {
+    record = sorted.find(r => r.topicCovered && r.topicCovered.trim().length > 0);
+  }
+
+  // 4. Fallback to the latest record
+  if (!record && sorted.length > 0) {
+    record = sorted[0];
+  }
+
+  if (record) {
+    return {
+      topic: record.topicCovered?.trim() || 'Regular Curriculum Session',
+      date: record.date,
+      attendanceStatus: record.attendance,
+      hasRecord: true
+    };
+  }
+
+  return {
+    topic: 'No previous session recorded (First class)',
+    date: null,
+    hasRecord: false
   };
 }
 

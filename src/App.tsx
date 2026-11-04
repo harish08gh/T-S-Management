@@ -415,6 +415,12 @@ export default function App() {
         irregularCount={irregularStudents.length}
         onLogout={handleLogout}
         onToggleSidebar={toggleSidebarCollapse}
+        onNavigateTab={(tab) => setTrainerTab(tab)}
+        demos={demos}
+        attendance={attendance}
+        classLink={classLink}
+        todayStr={todayStr}
+        onOpenClassLinkModal={() => setIsClassLinkModalOpen(true)}
       />
 
       {/* Role: TRAINER PORTAL */}
@@ -484,6 +490,8 @@ export default function App() {
             {trainerTab === 'class_schedule' && (
               <ClassSchedule
                 ongoingStudents={ongoingStudents}
+                attendance={attendance}
+                todayStr={todayStr}
                 onSaveStudent={handleSaveStudent}
                 onBulkSaveStudents={handleBulkSaveStudents}
                 onDeleteStudent={handleDeleteStudent}

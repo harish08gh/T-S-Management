@@ -21,20 +21,25 @@ import {
   ExternalLink,
   ChevronRight,
   FileSpreadsheet,
-  AlertCircle
+  AlertCircle,
+  BookOpen
 } from 'lucide-react';
-import { Student, ClassMode, ClassType, ClassLink } from '../../types';
+import { Student, ClassMode, ClassType, ClassLink, AttendanceRecord } from '../../types';
 import { downloadCSV, parseCSVText } from '../../utils/csvHelper';
 import {
   isWeekend as checkIsWeekend,
   getDayMode,
   getStudentEffectiveTiming,
   isStudentScheduledOnDate,
-  getStudentNextClassInfo
+  getStudentNextClassInfo,
+  getLastCoveredTopic,
+  formatDDMMYYYY
 } from '../../utils/scheduleUtils';
 
 interface ClassScheduleProps {
   ongoingStudents: Student[];
+  attendance?: AttendanceRecord[];
+  todayStr?: string;
   onSaveStudent: (student: Student) => void;
   onBulkSaveStudents?: (students: Student[]) => Promise<void> | void;
   onDeleteStudent: (id: string) => void;
@@ -92,6 +97,8 @@ function getStudentSlotKeys(timing: string, mode: string): string[] {
 
 export const ClassSchedule: React.FC<ClassScheduleProps> = ({
   ongoingStudents,
+  attendance = [],
+  todayStr = new Date().toISOString().split('T')[0],
   onSaveStudent,
   onBulkSaveStudents,
   onDeleteStudent,
@@ -442,7 +449,6 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,11:00 AM - 1
 
   // --- UPCOMING CLASSES CALCULATION ---
   const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
-  const todayStr = currentTime.toISOString().split('T')[0];
   const isWeekendToday = checkIsWeekend(todayStr);
   const todayBatchMode = getDayMode(todayStr);
 
@@ -710,6 +716,25 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,11:00 AM - 1
                   <span>•</span>
                   <span><strong>Phone:</strong> {nextUpcoming.student.phone}</span>
                 </div>
+
+                {/* Last Class Covered Topic (Trainer Only) */}
+                {(() => {
+                  const lastTopic = getLastCoveredTopic(nextUpcoming.student.id, attendance, todayStr);
+                  return (
+                    <div className="mt-2.5 bg-white/10 border border-white/20 rounded-md px-3 py-1.5 text-xs flex items-center gap-2 max-w-xl text-white shadow-2xs">
+                      <BookOpen className="w-3.5 h-3.5 text-blue-300 shrink-0" />
+                      <div className="min-w-0">
+                        <span className="text-blue-200 font-bold uppercase tracking-wider text-[10px]">Topic Covered in Last Class: </span>
+                        <span className="font-semibold text-white ml-1">{lastTopic.topic}</span>
+                        {lastTopic.date && (
+                          <span className="text-[10px] text-blue-200/80 font-mono ml-2">
+                            ({formatDDMMYYYY(lastTopic.date)})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
               <div>
@@ -1214,9 +1239,22 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,11:00 AM - 1
                         })()}
                       </td>
 
-                      {/* Course */}
+                      {/* Course & Last Covered Topic */}
                       <td className="py-3 px-3 text-slate-800 font-medium">
-                        {student.course}
+                        <div>{student.course}</div>
+                        {(() => {
+                          const lastTopic = getLastCoveredTopic(student.id, attendance, todayStr);
+                          return (
+                            <div
+                              className="text-[10px] text-slate-600 flex items-center gap-1 mt-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/60 max-w-[220px]"
+                              title={`Last Topic: ${lastTopic.topic}${lastTopic.date ? ` (${formatDDMMYYYY(lastTopic.date)})` : ''}`}
+                            >
+                              <BookOpen className="w-3 h-3 text-[#0a6ed1] shrink-0" />
+                              <span className="text-slate-400 font-semibold">Last:</span>
+                              <span className="text-slate-700 truncate font-medium">{lastTopic.topic}</span>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* DOJ */}

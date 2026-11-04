@@ -29,7 +29,9 @@ import {
   getDayMode,
   getStudentEffectiveTiming,
   isStudentScheduledOnDate,
-  getStudentNextClassInfo
+  getStudentNextClassInfo,
+  getLastCoveredTopic,
+  formatDDMMYYYY
 } from '../../utils/scheduleUtils';
 
 interface DashboardProps {
@@ -733,6 +735,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </div>
                     </div>
 
+                    {/* Last Class Covered Topic (Trainer Only) */}
+                    {(() => {
+                      const lastTopic = getLastCoveredTopic(active.student.id, attendance, todayStr);
+                      return (
+                        <div className="bg-blue-50/90 border border-blue-200/90 rounded-md p-2.5 text-xs shadow-2xs">
+                          <div className="flex items-center justify-between text-blue-950 font-semibold mb-1">
+                            <span className="flex items-center gap-1.5 text-[#0a6ed1]">
+                              <BookOpen className="w-3.5 h-3.5" />
+                              <span className="text-[11px] uppercase tracking-wider font-bold">Topic Covered in Last Class:</span>
+                            </span>
+                            {lastTopic.date && (
+                              <span className="text-[10px] text-blue-800 font-mono bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200 font-semibold">
+                                {formatDDMMYYYY(lastTopic.date)}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-slate-800 font-semibold pl-5 text-xs leading-relaxed">
+                            {lastTopic.topic}
+                          </p>
+                        </div>
+                      );
+                    })()}
+
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                       <a
                         href={classLink.url}
@@ -828,6 +853,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <strong>Reason for timing change:</strong> {nextUpcomingClass.overrideReason}
                     </div>
                   )}
+
+                  {/* Last Class Covered Topic (Trainer Only) */}
+                  {(() => {
+                    const lastTopic = getLastCoveredTopic(nextUpcomingClass.student.id, attendance, todayStr);
+                    return (
+                      <div className="bg-slate-50 border border-slate-200 rounded-md p-2.5 text-xs shadow-2xs mt-2">
+                        <div className="flex items-center justify-between text-slate-900 font-semibold mb-1">
+                          <span className="flex items-center gap-1.5 text-[#0a6ed1]">
+                            <BookOpen className="w-3.5 h-3.5" />
+                            <span className="text-[11px] uppercase tracking-wider font-bold">Topic Covered in Last Class:</span>
+                          </span>
+                          {lastTopic.date && (
+                            <span className="text-[10px] text-slate-600 font-mono bg-slate-200/80 px-1.5 py-0.5 rounded font-semibold">
+                              {formatDDMMYYYY(lastTopic.date)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-slate-800 font-semibold pl-5 text-xs leading-relaxed">
+                          {lastTopic.topic}
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                   <div className="text-[11px] text-slate-500 pt-1">
                     Student Contact: <span className="font-mono text-slate-700 font-semibold">{nextUpcomingClass.student.phone}</span>
@@ -992,6 +1040,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <span>•</span>
                       <span>Contact: {student.phone}</span>
                     </div>
+
+                    {/* Last Class Covered Topic (Trainer Only) */}
+                    {(() => {
+                      const lastTopic = getLastCoveredTopic(student.id, attendance, todayStr);
+                      return (
+                        <div className="text-[11px] text-slate-700 flex items-center gap-1.5 mt-1 bg-slate-50 px-2 py-1 rounded border border-slate-200/80 max-w-xl">
+                          <BookOpen className="w-3.5 h-3.5 text-[#0a6ed1] shrink-0" />
+                          <span className="text-slate-500 font-semibold text-[10px] uppercase tracking-wider">Last Class Topic:</span>
+                          <span className="font-semibold text-slate-800 truncate">{lastTopic.topic}</span>
+                          {lastTopic.date && (
+                            <span className="text-[10px] text-slate-400 font-mono shrink-0 ml-auto">
+                              ({formatDDMMYYYY(lastTopic.date)})
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="flex items-center space-x-2 self-end sm:self-auto">
