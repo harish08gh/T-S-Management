@@ -48,6 +48,7 @@ interface ClassScheduleProps {
   onNavigateToIrregular: () => void;
   classLink?: ClassLink;
   onOpenClassLinkModal?: () => void;
+  activeTrainerName?: string;
 }
 
 // Time parsing helper functions
@@ -106,7 +107,8 @@ export const ClassSchedule: React.FC<ClassScheduleProps> = ({
   onToggleRegular,
   onNavigateToIrregular,
   classLink,
-  onOpenClassLinkModal
+  onOpenClassLinkModal,
+  activeTrainerName = 'PPSTrainer'
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [modeFilter, setModeFilter] = useState<string>('ALL');
@@ -132,10 +134,14 @@ export const ClassSchedule: React.FC<ClassScheduleProps> = ({
     type: 'Online',
     timing: '09:00 AM - 10:30 AM',
     completionPercentage: 0,
-    trainerName: 'PPSTrainer',
+    trainerName: activeTrainerName,
     remark: '',
     isIrregular: false
   });
+
+  useEffect(() => {
+    setNewStudentForm(prev => ({ ...prev, trainerName: activeTrainerName }));
+  }, [activeTrainerName]);
 
   // Modal: Edit Student (All Fields)
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -254,7 +260,7 @@ export const ClassSchedule: React.FC<ClassScheduleProps> = ({
       type: newStudentForm.type || 'Online',
       timing: newStudentForm.timing || '09:00 AM - 10:30 AM',
       completionPercentage: Number(newStudentForm.completionPercentage || 0),
-      trainerName: newStudentForm.trainerName || 'PPSTrainer',
+      trainerName: newStudentForm.trainerName || activeTrainerName,
       remark: newStudentForm.remark || 'Regular ongoing batch',
       isIrregular: false,
       lastActiveDate: new Date().toISOString().split('T')[0]
@@ -274,7 +280,7 @@ export const ClassSchedule: React.FC<ClassScheduleProps> = ({
       type: 'Online',
       timing: '09:00 AM - 10:30 AM',
       completionPercentage: 0,
-      trainerName: 'PPSTrainer',
+      trainerName: activeTrainerName,
       remark: '',
       isIrregular: false
     });
@@ -390,7 +396,7 @@ Karthik Raj,+91 91234 56780,karthik@example.com,11:00 AM - 12:30 PM,11:00 AM - 1
           const rawPct = pctIdx !== -1 && row[pctIdx] ? parseInt(row[pctIdx].replace('%', '').trim(), 10) : 0;
           const completionPercentage = isNaN(rawPct) ? 0 : Math.min(100, Math.max(0, rawPct));
 
-          const trainerName = trainerIdx !== -1 && row[trainerIdx] ? row[trainerIdx].trim() : 'PPSTrainer';
+          const trainerName = trainerIdx !== -1 && row[trainerIdx] ? row[trainerIdx].trim() : activeTrainerName;
           const remark = remarkIdx !== -1 && row[remarkIdx] ? row[remarkIdx].trim() : 'Imported via CSV';
 
           const rawIrreg = irregIdx !== -1 && row[irregIdx] ? row[irregIdx].trim().toLowerCase() : '';

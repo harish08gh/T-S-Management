@@ -39,6 +39,17 @@ export const DailyClassLink: React.FC<DailyClassLinkProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    setTitle(currentLink.title || 'Daily Live Classroom Session');
+    setUrl(currentLink.url || '');
+    setCourse(currentLink.course || 'All Ongoing');
+    setDurationOption(currentLink.durationOption || 'entire_day');
+    setCustomExpiresAt(
+      currentLink.expiresAt ? new Date(currentLink.expiresAt).toISOString().slice(0, 16) : ''
+    );
+    setNotes(currentLink.notes || '');
+  }, [currentLink]);
+
   // Live countdown timer calculation
   useEffect(() => {
     const calculateTimeLeft = () => {
@@ -305,7 +316,7 @@ export const DailyClassLink: React.FC<DailyClassLinkProps> = ({
               <div className="font-semibold text-xs text-slate-900">{currentLink.title}</div>
 
               <div className="bg-white rounded p-2 text-xs font-mono text-blue-700 break-all border border-slate-200">
-                {currentLink.url}
+                {currentLink.url || 'No meeting link published for today yet'}
               </div>
 
               <div className="flex items-center space-x-2 text-[11px] text-slate-600">
@@ -314,19 +325,26 @@ export const DailyClassLink: React.FC<DailyClassLinkProps> = ({
               </div>
 
               <div className="pt-2 flex items-center gap-2">
-                <a
-                  href={currentLink.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex-1 bg-[#0a6ed1] text-white py-1.5 px-3 rounded text-xs font-semibold text-center flex items-center justify-center gap-1.5"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Join Session</span>
-                </a>
+                {currentLink.url ? (
+                  <a
+                    href={currentLink.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 bg-[#0a6ed1] text-white py-1.5 px-3 rounded text-xs font-semibold text-center flex items-center justify-center gap-1.5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Join Session</span>
+                  </a>
+                ) : (
+                  <span className="flex-1 bg-slate-200 text-slate-500 py-1.5 px-3 rounded text-xs font-semibold text-center">
+                    Awaiting Daily Link
+                  </span>
+                )}
                 <button
                   type="button"
+                  disabled={!currentLink.url}
                   onClick={handleCopyLink}
-                  className="p-1.5 bg-white border border-slate-300 rounded text-slate-700 hover:bg-slate-50"
+                  className="p-1.5 bg-white border border-slate-300 rounded text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                   title="Copy URL"
                 >
                   <Copy className="w-4 h-4" />

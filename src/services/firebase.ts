@@ -207,7 +207,6 @@ export class DataService {
   private async initFirestoreSync() {
     try {
       const studentsCol = collection(firestore, 'students');
-      
       onSnapshot(
         studentsCol,
         snapshot => {
@@ -228,6 +227,61 @@ export class DataService {
           this.isFirestoreConnected = true;
           this.connectionStatusText = 'Cloud Synced';
           this.notify();
+        }
+      );
+
+      // Sync Trainer Accounts
+      const trainersCol = collection(firestore, 'trainers');
+      onSnapshot(
+        trainersCol,
+        snapshot => {
+          if (!snapshot.empty) {
+            const remoteTrainers: TrainerAccount[] = [];
+            snapshot.forEach(docSnap => {
+              remoteTrainers.push({ id: docSnap.id, ...(docSnap.data() as Omit<TrainerAccount, 'id'>) });
+            });
+            // Merge remote trainers with local cache preserving any unsynced local trainers
+            const mergedMap = new Map<string, TrainerAccount>(
+              this.trainers.map(t => [t.id, t])
+            );
+            remoteTrainers.forEach(rt => {
+              mergedMap.set(rt.id, rt);
+            });
+            this.trainers = Array.from(mergedMap.values());
+            saveLocal(STORAGE_KEYS.TRAINERS, this.trainers);
+            this.notify();
+          }
+        },
+        error => {
+          console.warn('[Firestore] Trainers listener note:', error.message);
+        }
+      );
+
+      // Sync Per-Trainer Class Links
+      const classLinksCol = collection(firestore, 'classLinks');
+      onSnapshot(
+        classLinksCol,
+        snapshot => {
+          if (!snapshot.empty) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            snapshot.forEach(docSnap => {
+              const data = docSnap.data() as ClassLink;
+              if (docSnap.id === 'current') {
+                const createdDate = data.createdAt ? data.createdAt.split('T')[0] : '';
+                if (createdDate === todayStr) {
+                  this.classLink = data;
+                  saveLocal(STORAGE_KEYS.CLASS_LINK, data);
+                }
+              } else {
+                this.trainerClassLinks[docSnap.id] = data;
+              }
+            });
+            saveLocal(STORAGE_KEYS.TRAINER_CLASS_LINKS, this.trainerClassLinks);
+            this.notify();
+          }
+        },
+        error => {
+          console.warn('[Firestore] ClassLinks listener note:', error.message);
         }
       );
     } catch (err: unknown) {
@@ -614,10 +668,24 @@ export class DataService {
     saveLocal(STORAGE_KEYS.DEFAULT_TRAINER_PW, this.defaultTrainerPassword);
 
     if (syncPendingTrainers) {
-      this.trainers = this.trainers.map(t =>
-        t.isDefaultPassword ? { ...t, password: trimmed } : t
-      );
+      const updatedPending: TrainerAccount[] = [];
+      this.trainers = this.trainers.map(t => {
+        if (t.isDefaultPassword) {
+          const upd = { ...t, password: trimmed };
+          updatedPending.push(upd);
+          return upd;
+        }
+        return t;
+      });
       saveLocal(STORAGE_KEYS.TRAINERS, this.trainers);
+
+      for (const tr of updatedPending) {
+        try {
+          await setDoc(doc(firestore, 'trainers', tr.id), tr);
+        } catch (e) {
+          console.warn('[Firestore] default pw trainer sync fallback:', e);
+        }
+      }
     }
     this.notify();
   }
@@ -704,12 +772,18 @@ export class DataService {
   public async markTrainerLoggedIn(trainerId: string): Promise<void> {
     const idx = this.trainers.findIndex(t => t.id === trainerId);
     if (idx < 0) return;
-    this.trainers[idx] = {
+    const updated = {
       ...this.trainers[idx],
       lastLoginAt: new Date().toISOString()
     };
+    this.trainers[idx] = updated;
     saveLocal(STORAGE_KEYS.TRAINERS, this.trainers);
     this.notify();
+    try {
+      await setDoc(doc(firestore, 'trainers', trainerId), updated);
+    } catch (e) {
+      console.warn('[Firestore] trainer lastLoginAt sync fallback:', e);
+    }
   }
 
   public authenticateTrainer(
@@ -721,7 +795,10 @@ export class DataService {
   } {
     const cleanUser = username.trim().toLowerCase();
     const trainer = this.trainers.find(
-      t => t.username.trim().toLowerCase() === cleanUser || t.name.trim().toLowerCase() === cleanUser
+      t =>
+        t.username.trim().toLowerCase() === cleanUser ||
+        t.name.trim().toLowerCase() === cleanUser ||
+        (t.email || '').trim().toLowerCase() === cleanUser
     );
     if (!trainer) return { status: 'not_found' };
     if (trainer.status !== 'Active') return { status: 'inactive', trainer };

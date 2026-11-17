@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Link2, Clock, Save, ExternalLink } from 'lucide-react';
 import { ClassLink } from '../../types';
 
@@ -21,6 +21,15 @@ export const ClassLinkModal: React.FC<ClassLinkModalProps> = ({
     currentLink.durationOption || 'entire_day'
   );
   const [notes, setNotes] = useState(currentLink.notes || '');
+
+  useEffect(() => {
+    if (isOpen) {
+      setUrl(currentLink.url || '');
+      setTitle(currentLink.title || 'Daily Live Classroom Session');
+      setDurationOption(currentLink.durationOption || 'entire_day');
+      setNotes(currentLink.notes || '');
+    }
+  }, [isOpen, currentLink]);
 
   if (!isOpen) return null;
 

@@ -28,8 +28,13 @@ import { AdminPortal } from './components/admin/AdminPortal';
 import { LoginPage } from './components/auth/LoginPage';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
-const AUTH_STORAGE_KEY = 'pps_auth_session_clean_v3';
+const PORTAL_AUTH_KEYS: Record<UserRole, string> = {
+  admin: 'pps_auth_admin_v3',
+  trainer: 'pps_auth_trainer_v3',
+  student: 'pps_auth_student_v3'
+};
 const SETTINGS_STORAGE_KEY = 'pps_trainer_system_settings_v3';
+const TRAINER_SETTINGS_MAP_KEY = 'pps_trainer_settings_by_id_v1';
 
 const DEFAULT_TRAINER_SETTINGS: TrainerSystemSettings = {
   trainerUsername: 'HARISH',
@@ -79,6 +84,49 @@ interface AuthSession {
   trainerId?: string;
 }
 
+function detectPortalRoute(): UserRole {
+  if (typeof window !== 'undefined') {
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    if (hash.includes('admin') || search.includes('portal=admin')) return 'admin';
+    if (hash.includes('trainer') || search.includes('portal=trainer')) return 'trainer';
+  }
+  return 'student';
+}
+
+function loadPortalSession(route: UserRole): AuthSession | null {
+  try {
+    const stored = localStorage.getItem(PORTAL_AUTH_KEYS[route]);
+    if (!stored) return null;
+    const parsed: AuthSession = JSON.parse(stored);
+    if (parsed.role !== route) return null;
+    if (route === 'trainer' && !parsed.trainerId) {
+      localStorage.removeItem(PORTAL_AUTH_KEYS.trainer);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeSettings(raw?: Partial<TrainerSystemSettings>): TrainerSystemSettings {
+  return {
+    ...DEFAULT_TRAINER_SETTINGS,
+    ...(raw || {}),
+    weekOffDays: raw?.weekOffDays || DEFAULT_TRAINER_SETTINGS.weekOffDays,
+    lunchBreak: raw?.lunchBreak || DEFAULT_TRAINER_SETTINGS.lunchBreak,
+    leaves: raw?.leaves || DEFAULT_TRAINER_SETTINGS.leaves,
+    shiftTimingWeekday: raw?.shiftTimingWeekday || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekday,
+    shiftTimingWeekend: raw?.shiftTimingWeekend || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekend,
+    allowedPercentageStudentIds:
+      raw?.allowedPercentageStudentIds || DEFAULT_TRAINER_SETTINGS.allowedPercentageStudentIds || [],
+    allowedAttendanceStudentIds:
+      raw?.allowedAttendanceStudentIds || DEFAULT_TRAINER_SETTINGS.allowedAttendanceStudentIds || [],
+    holidays: raw?.holidays || DEFAULT_TRAINER_SETTINGS.holidays || []
+  };
+}
+
 function doesRecordBelongToTrainer(
   record: { trainerId?: string; trainerName?: string },
   trainer: TrainerAccount | null
@@ -94,49 +142,51 @@ function doesRecordBelongToTrainer(
 }
 
 export default function App() {
-  // Authentication session
-  const [authSession, setAuthSession] = useState<AuthSession | null>(() => {
-    try {
-      const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-      if (!stored) return null;
-      const parsed: AuthSession = JSON.parse(stored);
-      // Invalidate legacy trainer sessions without a trainerId so multi-trainer isolation is enforced
-      if (parsed.role === 'trainer' && !parsed.trainerId) {
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-        return null;
-      }
-      return parsed;
-    } catch {
-      return null;
-    }
-  });
+  // Active portal determined by URL (#/admin, #/trainer, #/student)
+  const [portalRoute, setPortalRoute] = useState<UserRole>(detectPortalRoute);
 
-  // System settings
+  // Authentication session scoped to the active portal
+  const [authSession, setAuthSession] = useState<AuthSession | null>(() =>
+    loadPortalSession(detectPortalRoute())
+  );
+
+  // Sync portal & session when URL hash changes
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const nextRoute = detectPortalRoute();
+      setPortalRoute(nextRoute);
+      setAuthSession(loadPortalSession(nextRoute));
+    };
+    window.addEventListener('hashchange', handleLocationChange);
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('popstate', handleLocationChange);
+    };
+  }, []);
+
+  // Base system settings
   const [systemSettings, setSystemSettings] = useState<TrainerSystemSettings>(() => {
     try {
       const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
       if (!stored) return DEFAULT_TRAINER_SETTINGS;
-      const parsed = JSON.parse(stored);
-      return {
-        ...DEFAULT_TRAINER_SETTINGS,
-        ...parsed,
-        weekOffDays: parsed.weekOffDays || DEFAULT_TRAINER_SETTINGS.weekOffDays,
-        lunchBreak: parsed.lunchBreak || DEFAULT_TRAINER_SETTINGS.lunchBreak,
-        leaves: parsed.leaves || DEFAULT_TRAINER_SETTINGS.leaves,
-        shiftTimingWeekday: parsed.shiftTimingWeekday || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekday,
-        shiftTimingWeekend: parsed.shiftTimingWeekend || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekend,
-        allowedPercentageStudentIds:
-          parsed.allowedPercentageStudentIds || DEFAULT_TRAINER_SETTINGS.allowedPercentageStudentIds || [],
-        allowedAttendanceStudentIds:
-          parsed.allowedAttendanceStudentIds || DEFAULT_TRAINER_SETTINGS.allowedAttendanceStudentIds || [],
-        holidays: parsed.holidays || DEFAULT_TRAINER_SETTINGS.holidays || []
-      };
+      return normalizeSettings(JSON.parse(stored));
     } catch {
       return DEFAULT_TRAINER_SETTINGS;
     }
   });
 
-  const [role, setRole] = useState<UserRole>(authSession?.role || 'student');
+  // Per-trainer isolated settings map
+  const [trainerSettingsMap, setTrainerSettingsMap] = useState<Record<string, TrainerSystemSettings>>(() => {
+    try {
+      const stored = localStorage.getItem(TRAINER_SETTINGS_MAP_KEY);
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const role: UserRole = authSession?.role || portalRoute;
   const [trainerTab, setTrainerTab] = useState<TrainerTab>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     try {
@@ -217,7 +267,7 @@ export default function App() {
   useEffect(() => {
     if (authSession?.role === 'trainer') {
       if (!activeTrainer || activeTrainer.status !== 'Active' || activeTrainer.isDefaultPassword) {
-        localStorage.removeItem(AUTH_STORAGE_KEY);
+        localStorage.removeItem(PORTAL_AUTH_KEYS.trainer);
         setAuthSession(null);
       }
     }
@@ -230,6 +280,8 @@ export default function App() {
       if (found) {
         setSelectedStudent(found);
       }
+    } else if (authSession?.role !== 'student') {
+      setSelectedStudent(null);
     }
   }, [students, authSession]);
 
@@ -293,7 +345,19 @@ export default function App() {
     ? dataService.isClassLinkActive(activeTrainer.id)
     : dataService.isClassLinkActive();
 
-  // Scoped Class Link for logged-in Student (matches their assigned trainer)
+  // Scoped Class Link & Settings for logged-in Student (matches their assigned trainer)
+  const studentAssignedTrainer = useMemo(() => {
+    if (!selectedStudent) return null;
+    return (
+      trainers.find(
+        t =>
+          (selectedStudent.trainerId && t.id === selectedStudent.trainerId) ||
+          t.name.trim().toLowerCase() === (selectedStudent.trainerName || '').trim().toLowerCase() ||
+          t.username.trim().toLowerCase() === (selectedStudent.trainerName || '').trim().toLowerCase()
+      ) || null
+    );
+  }, [selectedStudent, trainers]);
+
   const studentTrainerKey = selectedStudent?.trainerId || selectedStudent?.trainerName;
   const studentClassLink = useMemo(() => {
     return studentTrainerKey ? dataService.getClassLinkForTrainer(studentTrainerKey) : classLink;
@@ -303,39 +367,58 @@ export default function App() {
     ? dataService.isClassLinkActive(studentTrainerKey)
     : dataService.isClassLinkActive();
 
+  const studentTrainerSettings = useMemo(() => {
+    if (studentAssignedTrainer && trainerSettingsMap[studentAssignedTrainer.id]) {
+      return normalizeSettings(trainerSettingsMap[studentAssignedTrainer.id]);
+    }
+    return systemSettings;
+  }, [studentAssignedTrainer, trainerSettingsMap, systemSettings]);
+
   // Attendance records for currently selected student (strictly isolated)
   const currentStudentAttendance = selectedStudent
     ? attendance.filter(a => a.studentId === selectedStudent.id)
     : [];
 
-  // Effective settings merged with active trainer profile for TrainerSettings
+  // Effective settings merged with active trainer profile & per-trainer isolated settings
   const effectiveTrainerSettings: TrainerSystemSettings = useMemo(() => {
     if (!activeTrainer) return systemSettings;
+    const savedForTrainer = trainerSettingsMap[activeTrainer.id]
+      ? normalizeSettings(trainerSettingsMap[activeTrainer.id])
+      : normalizeSettings({
+          ...systemSettings,
+          // New trainers start with clean leave/permission lists unless they were Harish inheriting legacy global settings
+          leaves: activeTrainer.id === 'trainer-harish' ? systemSettings.leaves : [],
+          allowedPercentageStudentIds:
+            activeTrainer.id === 'trainer-harish' ? systemSettings.allowedPercentageStudentIds : [],
+          allowedAttendanceStudentIds:
+            activeTrainer.id === 'trainer-harish' ? systemSettings.allowedAttendanceStudentIds : []
+        });
+
     return {
-      ...systemSettings,
+      ...savedForTrainer,
       trainerUsername: activeTrainer.username,
       trainerName: activeTrainer.name,
-      trainerEmail: activeTrainer.email || systemSettings.trainerEmail,
-      trainerPhone: activeTrainer.phone || systemSettings.trainerPhone,
+      trainerEmail: activeTrainer.email || savedForTrainer.trainerEmail,
+      trainerPhone: activeTrainer.phone || savedForTrainer.trainerPhone,
       trainerPassword: activeTrainer.password
     };
-  }, [systemSettings, activeTrainer]);
+  }, [systemSettings, trainerSettingsMap, activeTrainer]);
 
   // Authentication Handlers
   const handleAdminLoginSuccess = () => {
     const session: AuthSession = { role: 'admin' };
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+    localStorage.setItem(PORTAL_AUTH_KEYS.admin, JSON.stringify(session));
+    setPortalRoute('admin');
     setAuthSession(session);
-    setRole('admin');
     showToast('Signed in to Admin Portal as PPSAdmin', 'success');
   };
 
   const handleTrainerLoginSuccess = async (trainer: TrainerAccount) => {
     await dataService.markTrainerLoggedIn(trainer.id);
     const session: AuthSession = { role: 'trainer', trainerId: trainer.id };
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+    localStorage.setItem(PORTAL_AUTH_KEYS.trainer, JSON.stringify(session));
+    setPortalRoute('trainer');
     setAuthSession(session);
-    setRole('trainer');
     setTrainerTab('dashboard');
     showToast(`Signed in successfully as ${trainer.name}`, 'success');
   };
@@ -351,43 +434,60 @@ export default function App() {
 
   const handleStudentLoginSuccess = (student: Student) => {
     const session: AuthSession = { role: 'student', studentId: student.id };
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+    localStorage.setItem(PORTAL_AUTH_KEYS.student, JSON.stringify(session));
+    setPortalRoute('student');
     setAuthSession(session);
-    setRole('student');
     setSelectedStudent(student);
     showToast(`Welcome back, ${student.name}!`, 'success');
   };
 
   const handleLogout = () => {
-    localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(PORTAL_AUTH_KEYS[portalRoute]);
     setAuthSession(null);
     setSelectedStudent(null);
     showToast('Logged out successfully', 'info');
   };
 
-  // Trainer Settings Save (syncs password/profile back to activeTrainer)
+  // Trainer Settings Save (isolated per trainer + syncs password/profile back to activeTrainer)
   const handleSaveTrainerSettings = async (newSettings: TrainerSystemSettings) => {
-    setSystemSettings(newSettings);
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(newSettings));
-
+    const normalized = normalizeSettings(newSettings);
     if (activeTrainer) {
-      const updatedPassword = newSettings.trainerPassword?.trim();
-      const updatedUsername = newSettings.trainerUsername?.trim() || activeTrainer.username;
-      const updatedName = newSettings.trainerName?.trim() || activeTrainer.name;
+      const updatedMap = {
+        ...trainerSettingsMap,
+        [activeTrainer.id]: normalized
+      };
+      setTrainerSettingsMap(updatedMap);
+      localStorage.setItem(TRAINER_SETTINGS_MAP_KEY, JSON.stringify(updatedMap));
+
+      // Keep student default password synced globally if updated
+      if (normalized.studentPassword !== systemSettings.studentPassword) {
+        const updatedGlobal = { ...systemSettings, studentPassword: normalized.studentPassword };
+        setSystemSettings(updatedGlobal);
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(updatedGlobal));
+      }
+
+      const updatedPassword = normalized.trainerPassword?.trim();
+      const updatedUsername = normalized.trainerUsername?.trim() || activeTrainer.username;
+      const updatedName = normalized.trainerName?.trim() || activeTrainer.name;
 
       await dataService.saveTrainer({
         ...activeTrainer,
         name: updatedName,
         username: updatedUsername,
-        email: newSettings.trainerEmail?.trim() || activeTrainer.email,
-        phone: newSettings.trainerPhone?.trim() || activeTrainer.phone,
+        email: normalized.trainerEmail?.trim() || activeTrainer.email,
+        phone: normalized.trainerPhone?.trim() || activeTrainer.phone,
         password: updatedPassword || activeTrainer.password,
-        isDefaultPassword: updatedPassword ? updatedPassword === defaultTrainerPassword : activeTrainer.isDefaultPassword,
+        isDefaultPassword: updatedPassword
+          ? updatedPassword === defaultTrainerPassword
+          : activeTrainer.isDefaultPassword,
         passwordUpdatedAt:
           updatedPassword && updatedPassword !== activeTrainer.password
             ? new Date().toISOString()
             : activeTrainer.passwordUpdatedAt
       });
+    } else {
+      setSystemSettings(normalized);
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
     }
 
     showToast('Trainer settings and security policies updated', 'success');
@@ -595,7 +695,7 @@ export default function App() {
     showToast('Course completion mail template saved', 'success');
   };
 
-  // IF NOT AUTHENTICATED: Show Dedicated Login Page
+  // IF NOT AUTHENTICATED ON THIS PORTAL ROUTE: Show Dedicated Login Page
   if (!authSession) {
     return (
       <LoginPage
@@ -643,7 +743,7 @@ export default function App() {
       {/* Shell Bar */}
       <ShellBar
         currentRole={role}
-        onRoleChange={setRole}
+        onRoleChange={() => {}}
         selectedStudent={selectedStudent}
         allStudents={role === 'trainer' ? trainerStudents : students}
         onSelectStudent={setSelectedStudent}
@@ -745,7 +845,7 @@ export default function App() {
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={toggleSidebarCollapse}
             activeTrainerName={activeTrainer?.name || 'Trainer'}
-            activeTrainerShift={`${systemSettings.shiftTimingWeekday.start} - ${systemSettings.shiftTimingWeekday.end}`}
+            activeTrainerShift={`${effectiveTrainerSettings.shiftTimingWeekday.start} - ${effectiveTrainerSettings.shiftTimingWeekday.end}`}
             counts={{
               allStudents: trainerStudents.length,
               ongoing: ongoingStudents.length,
@@ -787,6 +887,7 @@ export default function App() {
                   onBulkSaveDemos={handleBulkSaveDemos}
                   onDeleteDemo={handleDeleteDemo}
                   onConvertDemoToOngoing={handleConvertDemoToOngoing}
+                  activeTrainerName={activeTrainer?.name || 'PPSTrainer'}
                 />
               )}
 
@@ -814,6 +915,7 @@ export default function App() {
                   onNavigateToIrregular={() => setTrainerTab('irregular_students')}
                   classLink={trainerClassLink}
                   onOpenClassLinkModal={() => setIsClassLinkModalOpen(true)}
+                  activeTrainerName={activeTrainer?.name || 'PPSTrainer'}
                 />
               )}
 
@@ -860,7 +962,7 @@ export default function App() {
                 <div className="flex items-center space-x-2">
                   <span className="font-semibold text-slate-700">PPS Software Training & Student Management</span>
                   <span>•</span>
-                  <span>{systemSettings.institutionName}</span>
+                  <span>{effectiveTrainerSettings.institutionName}</span>
                 </div>
                 <div className="flex items-center space-x-4 text-[11px] text-slate-400">
                   <button
@@ -889,9 +991,9 @@ export default function App() {
                 completionSettings={completionSettings}
                 onStudentTouchLink={handleStudentTouchLink}
                 todayStr={todayStr}
-                allowedPercentageStudentIds={systemSettings.allowedPercentageStudentIds || []}
-                allowedAttendanceStudentIds={systemSettings.allowedAttendanceStudentIds || []}
-                holidays={systemSettings.holidays || []}
+                allowedPercentageStudentIds={studentTrainerSettings.allowedPercentageStudentIds || []}
+                allowedAttendanceStudentIds={studentTrainerSettings.allowedAttendanceStudentIds || []}
+                holidays={studentTrainerSettings.holidays || []}
               />
             ) : (
               <div className="bg-white rounded-lg p-12 text-center border border-slate-200 shadow-xs max-w-md mx-auto space-y-4">
@@ -920,7 +1022,7 @@ export default function App() {
               <div className="flex items-center space-x-2">
                 <span className="font-semibold text-slate-700">PPS Software Training & Student Management</span>
                 <span>•</span>
-                <span>{systemSettings.institutionName}</span>
+                <span>{studentTrainerSettings.institutionName}</span>
               </div>
               <div className="flex items-center space-x-4 text-[11px] text-slate-400">
                 <button

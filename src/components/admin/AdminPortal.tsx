@@ -91,6 +91,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [syncPendingWithNewDefault, setSyncPendingWithNewDefault] = useState(true);
   const [showDefaultPw, setShowDefaultPw] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [newlyCreatedTrainer, setNewlyCreatedTrainer] = useState<TrainerAccount | null>(null);
 
   const originBase = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : '';
 
@@ -100,6 +101,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(null), 2000);
     }
+  };
+
+  const buildTrainerInviteText = (trainer: TrainerAccount) => {
+    const loginUrl = `${originBase}#/trainer`;
+    return [
+      `Trainer Portal Login: ${loginUrl}`,
+      `Username: ${trainer.username}`,
+      trainer.isDefaultPassword
+        ? `Temporary Default Password: ${defaultTrainerPassword} (you will be asked to set your personal password on first login)`
+        : `Password: Your personal password (ask Admin to reset if forgotten)`
+    ].join('\n');
   };
 
   // Compute student/demo stats per trainer
@@ -236,6 +248,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         createdAt: new Date().toISOString()
       };
       await onSaveTrainer(newTrainer);
+      setNewlyCreatedTrainer(newTrainer);
     }
 
     setIsTrainerModalOpen(false);
@@ -503,6 +516,63 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </span>
           </div>
 
+          {/* Newly Created Trainer Quick Onboarding Banner */}
+          {newlyCreatedTrainer && (
+            <div className="mx-4 mt-4 p-4 bg-emerald-50 border border-emerald-300 rounded-lg flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs animate-in fade-in duration-150">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 font-bold text-emerald-900">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Trainer Account Created: {newlyCreatedTrainer.name}</span>
+                </div>
+                <p className="text-[11px] text-emerald-800">
+                  Share the Trainer Login URL (<code className="font-mono bg-white px-1 rounded border border-emerald-200">{originBase}#/trainer</code>) with username{' '}
+                  <code className="font-mono font-bold bg-white px-1 rounded border border-emerald-200">{newlyCreatedTrainer.username}</code> and default password{' '}
+                  <code className="font-mono font-bold bg-white px-1 rounded border border-emerald-200">{defaultTrainerPassword}</code>. They can log in immediately to add or manage their assigned students.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleCopyText('new-trainer-invite', buildTrainerInviteText(newlyCreatedTrainer))}
+                  className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded font-bold text-[11px] flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedKey === 'new-trainer-invite' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Copied Login Info!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy Login Info</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignmentTrainerFilter('ALL');
+                    setBulkTargetTrainerId(newlyCreatedTrainer.id);
+                    setSelectedIds([]);
+                    setActiveTab('student_assignments');
+                  }}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-[11px] flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                  <span>Assign Students to {newlyCreatedTrainer.name}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewlyCreatedTrainer(null)}
+                  className="p-1 text-emerald-700 hover:text-emerald-950 cursor-pointer"
+                  title="Dismiss"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Trainers Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
@@ -660,6 +730,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                 <span>Reset PW</span>
                               </button>
                             )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleCopyText(`copy-login-${t.id}`, buildTrainerInviteText(t))}
+                              className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-[#0a6ed1] border border-blue-200 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                              title="Copy trainer portal login link & username"
+                            >
+                              {copiedKey === `copy-login-${t.id}` ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                  <span className="text-emerald-700">Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  <span>Login Info</span>
+                                </>
+                              )}
+                            </button>
 
                             <button
                               type="button"

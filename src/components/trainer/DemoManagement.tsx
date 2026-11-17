@@ -39,6 +39,7 @@ interface DemoManagementProps {
       remark?: string;
     }
   ) => void;
+  activeTrainerName?: string;
 }
 
 export const DemoManagement: React.FC<DemoManagementProps> = ({
@@ -46,7 +47,8 @@ export const DemoManagement: React.FC<DemoManagementProps> = ({
   onSaveDemo,
   onBulkSaveDemos,
   onDeleteDemo,
-  onConvertDemoToOngoing
+  onConvertDemoToOngoing,
+  activeTrainerName = 'PPSTrainer'
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -84,7 +86,7 @@ export const DemoManagement: React.FC<DemoManagementProps> = ({
     mode: 'Online',
     feedback: '',
     status: 'Pending',
-    trainerName: 'PPSTrainer'
+    trainerName: activeTrainerName
   });
 
   const openAddModal = () => {
@@ -100,7 +102,7 @@ export const DemoManagement: React.FC<DemoManagementProps> = ({
       mode: 'Online',
       feedback: '',
       status: 'Pending',
-      trainerName: 'PPSTrainer'
+      trainerName: activeTrainerName
     });
     setIsModalOpen(true);
   };
@@ -131,7 +133,7 @@ export const DemoManagement: React.FC<DemoManagementProps> = ({
       mode: formData.mode || 'Online',
       feedback: formData.feedback || '',
       status: (formData.status as DemoStatus) || 'Pending',
-      trainerName: formData.trainerName || 'PPSTrainer',
+      trainerName: formData.trainerName || activeTrainerName,
       createdAt: editingDemo ? editingDemo.createdAt : new Date().toISOString()
     };
 
@@ -228,7 +230,7 @@ Varsha Varthan,9441552881,,2026-09-02,06:00 PM,SAP ABAP,Fresher,Online,HARISH,Ca
           const rawMode = modeIdx !== -1 && row[modeIdx] ? row[modeIdx].trim().toLowerCase() : '';
           const mode: ClassType = rawMode.includes('offline') ? 'Offline' : 'Online';
 
-          const trainerName = trainerIdx !== -1 && row[trainerIdx] ? row[trainerIdx].trim() : 'PPSTrainer';
+          const trainerName = trainerIdx !== -1 && row[trainerIdx] ? row[trainerIdx].trim() : activeTrainerName;
           const feedback = feedbackIdx !== -1 && row[feedbackIdx] ? row[feedbackIdx].trim() : 'Imported via CSV';
 
           const rawStatus = statusIdx !== -1 && row[statusIdx] ? row[statusIdx].trim().toLowerCase() : '';
