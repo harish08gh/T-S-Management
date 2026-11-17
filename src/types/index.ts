@@ -11,6 +11,21 @@ export interface TemporaryTimingOverride {
   setAt?: string;
 }
 
+export interface TrainerAccount {
+  id: string;
+  name: string;
+  username: string;
+  email?: string;
+  phone?: string;
+  specialization?: string;
+  password: string;
+  isDefaultPassword: boolean;
+  status: 'Active' | 'Inactive';
+  createdAt: string;
+  lastLoginAt?: string;
+  passwordUpdatedAt?: string;
+}
+
 export interface Student {
   id: string;
   sno?: number;
@@ -30,6 +45,7 @@ export interface Student {
   completionPercentage: number; // 0 - 100
   showCompletionPercentage?: boolean; // Trainer controlled visibility
   showAttendanceHistory?: boolean; // Trainer controlled visibility
+  trainerId?: string;
   trainerName: string;
   remark: string;
   isIrregular: boolean;
@@ -51,6 +67,7 @@ export interface DemoStudent {
   mode: ClassType;
   feedback: string;
   status: DemoStatus;
+  trainerId?: string;
   trainerName: string;
   createdAt: string;
 }
@@ -74,6 +91,7 @@ export interface ClassLink {
   title: string;
   url: string;
   course: string; // 'All Ongoing' or specific course
+  trainerId?: string;
   trainerName: string;
   durationOption: '1_hour' | '2_hours' | '4_hours' | 'entire_day' | 'custom';
   createdAt: string; // ISO
@@ -93,6 +111,11 @@ export interface CourseCompletionSettings {
   updatedAt: string;
 }
 
+export type AdminTab =
+  | 'trainers'
+  | 'student_assignments'
+  | 'portal_access';
+
 export type TrainerTab =
   | 'dashboard'
   | 'student_details'
@@ -109,7 +132,7 @@ export type StudentTab =
   | 'student_attendance'
   | 'student_completion';
 
-export type UserRole = 'trainer' | 'student';
+export type UserRole = 'admin' | 'trainer' | 'student';
 
 export interface TrainerLeave {
   id: string;

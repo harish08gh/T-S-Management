@@ -14,7 +14,8 @@ import {
   DemoStudent,
   AttendanceRecord,
   ClassLink,
-  CourseCompletionSettings
+  CourseCompletionSettings,
+  TrainerAccount
 } from '../types';
 import {
   INITIAL_STUDENTS,
@@ -42,14 +43,19 @@ export const firebaseApp = !getApps().length
 
 export const firestore = getFirestore(firebaseApp);
 
-// Local Storage Fallback Keys (Clean slate, no mock data)
+// Local Storage Fallback Keys
 const STORAGE_KEYS = {
   STUDENTS: 'pps_fiori_students_v2_clean',
   DEMOS: 'pps_fiori_demos_v2_clean',
   ATTENDANCE: 'pps_fiori_attendance_v2_clean',
   CLASS_LINK: 'pps_fiori_classlink_v2_clean',
+  TRAINER_CLASS_LINKS: 'pps_fiori_trainer_classlinks_v1',
   COMPLETION_SETTINGS: 'pps_fiori_completion_settings_v2_clean',
+  TRAINERS: 'pps_fiori_trainers_v1',
+  DEFAULT_TRAINER_PW: 'pps_fiori_default_trainer_pw_v1',
 };
+
+export const INITIAL_DEFAULT_TRAINER_PASSWORD = 'PPS@2026';
 
 // Helpers for localStorage sync
 function loadLocal<T>(key: string, defaultValue: T): T {
@@ -78,7 +84,10 @@ export class DataService {
   private demos: DemoStudent[] = [];
   private attendance: AttendanceRecord[] = [];
   private classLink: ClassLink = INITIAL_CLASS_LINK;
+  private trainerClassLinks: Record<string, ClassLink> = {};
   private completionSettings: CourseCompletionSettings = INITIAL_COMPLETION_SETTINGS;
+  private trainers: TrainerAccount[] = [];
+  private defaultTrainerPassword: string = INITIAL_DEFAULT_TRAINER_PASSWORD;
 
   private listeners: Set<() => void> = new Set();
   public isFirestoreConnected: boolean = false;
@@ -140,6 +149,49 @@ export class DataService {
       STORAGE_KEYS.COMPLETION_SETTINGS,
       INITIAL_COMPLETION_SETTINGS
     );
+
+    this.defaultTrainerPassword = loadLocal<string>(
+      STORAGE_KEYS.DEFAULT_TRAINER_PW,
+      INITIAL_DEFAULT_TRAINER_PASSWORD
+    ) || INITIAL_DEFAULT_TRAINER_PASSWORD;
+
+    this.trainerClassLinks = loadLocal<Record<string, ClassLink>>(
+      STORAGE_KEYS.TRAINER_CLASS_LINKS,
+      {}
+    );
+
+    // Load or seed trainers based on existing trainerNames in students/demos
+    const loadedTrainers = loadLocal<TrainerAccount[]>(STORAGE_KEYS.TRAINERS, []);
+    if (!loadedTrainers || loadedTrainers.length === 0) {
+      const seedTrainerNames = new Set<string>(['HARISH']);
+      this.students.forEach(s => {
+        if (s.trainerName && s.trainerName.trim()) {
+          seedTrainerNames.add(s.trainerName.trim());
+        }
+      });
+      this.demos.forEach(d => {
+        if (d.trainerName && d.trainerName.trim()) {
+          seedTrainerNames.add(d.trainerName.trim());
+        }
+      });
+
+      const nowIso = new Date().toISOString();
+      this.trainers = Array.from(seedTrainerNames).map((tName, idx) => ({
+        id: tName.toUpperCase() === 'HARISH' ? 'trainer-harish' : `trainer-${idx + 1}-${tName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+        name: tName,
+        username: tName,
+        email: `${tName.toLowerCase().replace(/[^a-z0-9]/g, '')}@pps-sw.com`,
+        phone: idx === 0 ? '+91 98400 00000' : '',
+        specialization: 'SAP ABAP, Data Analytics, Python Full Stack',
+        password: this.defaultTrainerPassword,
+        isDefaultPassword: true,
+        status: 'Active',
+        createdAt: nowIso
+      }));
+      saveLocal(STORAGE_KEYS.TRAINERS, this.trainers);
+    } else {
+      this.trainers = loadedTrainers;
+    }
   }
 
   private notify() {
@@ -418,6 +470,7 @@ export class DataService {
       type: batchData.type,
       timing: batchData.timing || '09:00 AM - 10:30 AM',
       completionPercentage: 0,
+      trainerId: demo.trainerId,
       trainerName: demo.trainerName || 'PPSTrainer',
       remark: batchData.remark || `Converted from demo on ${demo.date}. ${demo.feedback}`,
       isIrregular: false,
@@ -549,12 +602,247 @@ export class DataService {
     return newRecord;
   }
 
+  // ---- TRAINERS & ADMIN PORTAL MANAGEMENT ----
+  public getDefaultTrainerPassword(): string {
+    return this.defaultTrainerPassword;
+  }
+
+  public async updateDefaultTrainerPassword(newDefaultPw: string, syncPendingTrainers: boolean = true): Promise<void> {
+    const trimmed = newDefaultPw.trim();
+    if (!trimmed) return;
+    this.defaultTrainerPassword = trimmed;
+    saveLocal(STORAGE_KEYS.DEFAULT_TRAINER_PW, this.defaultTrainerPassword);
+
+    if (syncPendingTrainers) {
+      this.trainers = this.trainers.map(t =>
+        t.isDefaultPassword ? { ...t, password: trimmed } : t
+      );
+      saveLocal(STORAGE_KEYS.TRAINERS, this.trainers);
+    }
+    this.notify();
+  }
+
+  public getTrainers(): TrainerAccount[] {
+    return [...this.trainers];
+  }
+
+  public async saveTrainer(trainer: TrainerAccount): Promise<void> {
+    const idx = this.trainers.findIndex(t => t.id === trainer.id);
+    if (idx >= 0) {
+      this.trainers[idx] = trainer;
+    } else {
+      this.trainers.push(trainer);
+    }
+    saveLocal(STORAGE_KEYS.TRAINERS, this.trainers);
+    this.notify();
+
+    try {
+      await setDoc(doc(firestore, 'trainers', trainer.id), trainer);
+    } catch (e) {
+      console.warn('[Firestore] trainer write fallback:', e);
+    }
+  }
+
+  public async deleteTrainer(id: string): Promise<void> {
+    this.trainers = this.trainers.filter(t => t.id !== id);
+    saveLocal(STORAGE_KEYS.TRAINERS, this.trainers);
+    this.notify();
+
+    try {
+      await deleteDoc(doc(firestore, 'trainers', id));
+    } catch (e) {
+      console.warn('[Firestore] trainer delete fallback:', e);
+    }
+  }
+
+  public async resetTrainerPasswordToDefault(trainerId: string): Promise<TrainerAccount> {
+    const idx = this.trainers.findIndex(t => t.id === trainerId);
+    if (idx < 0) throw new Error('Trainer not found');
+
+    const updated: TrainerAccount = {
+      ...this.trainers[idx],
+      password: this.defaultTrainerPassword,
+      isDefaultPassword: true,
+      passwordUpdatedAt: new Date().toISOString()
+    };
+    this.trainers[idx] = updated;
+    saveLocal(STORAGE_KEYS.TRAINERS, this.trainers);
+    this.notify();
+
+    try {
+      await setDoc(doc(firestore, 'trainers', trainerId), updated);
+    } catch (e) {
+      console.warn('[Firestore] trainer password reset fallback:', e);
+    }
+    return updated;
+  }
+
+  public async updateTrainerPassword(trainerId: string, newPassword: string): Promise<TrainerAccount> {
+    const idx = this.trainers.findIndex(t => t.id === trainerId);
+    if (idx < 0) throw new Error('Trainer not found');
+
+    const nowIso = new Date().toISOString();
+    const updated: TrainerAccount = {
+      ...this.trainers[idx],
+      password: newPassword,
+      isDefaultPassword: false,
+      passwordUpdatedAt: nowIso,
+      lastLoginAt: nowIso
+    };
+    this.trainers[idx] = updated;
+    saveLocal(STORAGE_KEYS.TRAINERS, this.trainers);
+    this.notify();
+
+    try {
+      await setDoc(doc(firestore, 'trainers', trainerId), updated);
+    } catch (e) {
+      console.warn('[Firestore] trainer password update fallback:', e);
+    }
+    return updated;
+  }
+
+  public async markTrainerLoggedIn(trainerId: string): Promise<void> {
+    const idx = this.trainers.findIndex(t => t.id === trainerId);
+    if (idx < 0) return;
+    this.trainers[idx] = {
+      ...this.trainers[idx],
+      lastLoginAt: new Date().toISOString()
+    };
+    saveLocal(STORAGE_KEYS.TRAINERS, this.trainers);
+    this.notify();
+  }
+
+  public authenticateTrainer(
+    username: string,
+    password: string
+  ): {
+    status: 'not_found' | 'inactive' | 'invalid_password' | 'require_password_reset' | 'success';
+    trainer?: TrainerAccount;
+  } {
+    const cleanUser = username.trim().toLowerCase();
+    const trainer = this.trainers.find(
+      t => t.username.trim().toLowerCase() === cleanUser || t.name.trim().toLowerCase() === cleanUser
+    );
+    if (!trainer) return { status: 'not_found' };
+    if (trainer.status !== 'Active') return { status: 'inactive', trainer };
+
+    const matchesStored = trainer.password === password;
+    const matchesCurrentDefault = trainer.isDefaultPassword && password === this.defaultTrainerPassword;
+
+    if (!matchesStored && !matchesCurrentDefault) {
+      return { status: 'invalid_password', trainer };
+    }
+
+    if (trainer.isDefaultPassword || password === this.defaultTrainerPassword) {
+      return { status: 'require_password_reset', trainer };
+    }
+
+    return { status: 'success', trainer };
+  }
+
+  public async assignStudentsToTrainer(studentIds: string[], trainerId: string): Promise<void> {
+    const trainer = this.trainers.find(t => t.id === trainerId);
+    if (!trainer) return;
+    const idSet = new Set(studentIds);
+    this.students = this.students.map(s =>
+      idSet.has(s.id) ? { ...s, trainerId: trainer.id, trainerName: trainer.name } : s
+    );
+    saveLocal(STORAGE_KEYS.STUDENTS, this.students);
+    this.notify();
+
+    for (const s of this.students.filter(st => idSet.has(st.id))) {
+      try {
+        await setDoc(doc(firestore, 'students', s.id), s);
+      } catch (e) {
+        console.warn('[Firestore] assign student fallback:', e);
+      }
+    }
+  }
+
+  public async assignDemosToTrainer(demoIds: string[], trainerId: string): Promise<void> {
+    const trainer = this.trainers.find(t => t.id === trainerId);
+    if (!trainer) return;
+    const idSet = new Set(demoIds);
+    this.demos = this.demos.map(d =>
+      idSet.has(d.id) ? { ...d, trainerId: trainer.id, trainerName: trainer.name } : d
+    );
+    saveLocal(STORAGE_KEYS.DEMOS, this.demos);
+    this.notify();
+
+    for (const d of this.demos.filter(dm => idSet.has(dm.id))) {
+      try {
+        await setDoc(doc(firestore, 'demos', d.id), d);
+      } catch (e) {
+        console.warn('[Firestore] assign demo fallback:', e);
+      }
+    }
+  }
+
   // ---- CLASS LINK MANAGEMENT ----
+  private resolveTrainerKey(trainerIdOrName?: string): string | null {
+    if (!trainerIdOrName) return null;
+    const clean = trainerIdOrName.trim().toLowerCase();
+    const matched = this.trainers.find(
+      t => t.id.toLowerCase() === clean || t.name.trim().toLowerCase() === clean || t.username.trim().toLowerCase() === clean
+    );
+    return matched ? matched.id : clean;
+  }
+
   public getClassLink(): ClassLink {
     return { ...this.classLink };
   }
 
-  public async updateClassLink(data: Partial<ClassLink>): Promise<void> {
+  public getClassLinkForTrainer(trainerIdOrName?: string): ClassLink {
+    const key = this.resolveTrainerKey(trainerIdOrName);
+    if (key && this.trainerClassLinks[key]) {
+      const link = this.trainerClassLinks[key];
+      const todayStr = new Date().toISOString().split('T')[0];
+      const linkCreatedDate = link.createdAt ? link.createdAt.split('T')[0] : '';
+      if (!linkCreatedDate || linkCreatedDate !== todayStr) {
+        return {
+          ...INITIAL_CLASS_LINK,
+          trainerId: key,
+          trainerName: link.trainerName || trainerIdOrName || 'Trainer',
+          active: false,
+          url: '',
+          createdAt: '',
+          expiresAt: ''
+        };
+      }
+      return { ...link };
+    }
+    // Check if global classLink was published by this trainer
+    if (key && this.classLink.trainerName) {
+      const globalKey = this.resolveTrainerKey(this.classLink.trainerName);
+      if (globalKey === key) {
+        return { ...this.classLink };
+      }
+    }
+    return {
+      ...INITIAL_CLASS_LINK,
+      trainerId: key || undefined,
+      trainerName: trainerIdOrName || INITIAL_CLASS_LINK.trainerName,
+      active: false,
+      url: '',
+      createdAt: '',
+      expiresAt: ''
+    };
+  }
+
+  public async updateClassLink(data: Partial<ClassLink>, trainerIdOrName?: string): Promise<void> {
+    const key = this.resolveTrainerKey(trainerIdOrName || data.trainerId || data.trainerName);
+    if (key) {
+      const existing = this.trainerClassLinks[key] || { ...INITIAL_CLASS_LINK, trainerId: key };
+      const updated: ClassLink = {
+        ...existing,
+        ...data,
+        trainerId: key,
+        id: existing.id || `link-${key}-${Date.now()}`
+      };
+      this.trainerClassLinks[key] = updated;
+      saveLocal(STORAGE_KEYS.TRAINER_CLASS_LINKS, this.trainerClassLinks);
+    }
+
     this.classLink = {
       ...this.classLink,
       ...data,
@@ -564,25 +852,26 @@ export class DataService {
     this.notify();
 
     try {
-      await setDoc(doc(firestore, 'classLinks', 'current'), this.classLink);
+      await setDoc(doc(firestore, 'classLinks', key || 'current'), key ? this.trainerClassLinks[key] : this.classLink);
     } catch (e) {
       console.warn('[Firestore] class link write fallback:', e);
     }
   }
 
   // Helper to check if class link is active (must be updated today by trainer and not expired)
-  public isClassLinkActive(): boolean {
-    if (!this.classLink || !this.classLink.active) return false;
-    if (!this.classLink.url || !this.classLink.url.trim()) return false;
-    if (!this.classLink.createdAt) return false;
+  public isClassLinkActive(trainerIdOrName?: string): boolean {
+    const link = trainerIdOrName ? this.getClassLinkForTrainer(trainerIdOrName) : this.classLink;
+    if (!link || !link.active) return false;
+    if (!link.url || !link.url.trim()) return false;
+    if (!link.createdAt) return false;
 
     // Must be updated TODAY by trainer
     const todayStr = new Date().toISOString().split('T')[0];
-    const createdDateStr = this.classLink.createdAt.split('T')[0];
+    const createdDateStr = link.createdAt.split('T')[0];
     if (createdDateStr !== todayStr) return false;
 
-    if (this.classLink.expiresAt) {
-      const expiresAt = new Date(this.classLink.expiresAt).getTime();
+    if (link.expiresAt) {
+      const expiresAt = new Date(link.expiresAt).getTime();
       if (Date.now() >= expiresAt) return false;
     }
 
@@ -615,11 +904,13 @@ export class DataService {
     this.demos = [];
     this.attendance = [];
     this.classLink = { ...INITIAL_CLASS_LINK };
+    this.trainerClassLinks = {};
     this.completionSettings = { ...INITIAL_COMPLETION_SETTINGS };
     saveLocal(STORAGE_KEYS.STUDENTS, this.students);
     saveLocal(STORAGE_KEYS.DEMOS, this.demos);
     saveLocal(STORAGE_KEYS.ATTENDANCE, this.attendance);
     saveLocal(STORAGE_KEYS.CLASS_LINK, this.classLink);
+    saveLocal(STORAGE_KEYS.TRAINER_CLASS_LINKS, this.trainerClassLinks);
     saveLocal(STORAGE_KEYS.COMPLETION_SETTINGS, this.completionSettings);
     this.notify();
   }

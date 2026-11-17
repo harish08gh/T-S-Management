@@ -22,9 +22,10 @@ import {
   TrendingUp,
   CheckCheck,
   ChevronRight,
-  BookOpen
+  BookOpen,
+  Shield
 } from 'lucide-react';
-import { UserRole, Student, TrainerTab, DemoStudent, AttendanceRecord, ClassLink } from '../types';
+import { UserRole, Student, TrainerTab, DemoStudent, AttendanceRecord, ClassLink, TrainerAccount } from '../types';
 import { isStudentScheduledOnDate, getStudentEffectiveTiming, parseClassRange } from '../utils/scheduleUtils';
 
 interface ShellBarProps {
@@ -46,6 +47,8 @@ interface ShellBarProps {
   classLink?: ClassLink;
   todayStr?: string;
   onOpenClassLinkModal?: () => void;
+  activeTrainer?: TrainerAccount | null;
+  adminUsername?: string;
 }
 
 interface NotificationItem {
@@ -78,7 +81,9 @@ export const ShellBar: React.FC<ShellBarProps> = ({
   attendance = [],
   classLink,
   todayStr = new Date().toISOString().split('T')[0],
-  onOpenClassLinkModal
+  onOpenClassLinkModal,
+  activeTrainer = null,
+  adminUsername = 'PPSAdmin'
 }) => {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<'all' | 'urgent' | 'schedule'>('all');
@@ -314,8 +319,8 @@ export const ShellBar: React.FC<ShellBarProps> = ({
             </div>
           </div>
 
-          {/* Center Cloud Sync Status (Trainer Only) */}
-          {currentRole === 'trainer' && (
+          {/* Center Cloud Sync Status (Admin & Trainer) */}
+          {(currentRole === 'trainer' || currentRole === 'admin') && (
             <div className="hidden md:flex items-center space-x-2">
               <div className="flex items-center bg-[#13202e] text-slate-200 text-xs px-2.5 py-1 rounded-md border border-slate-700/60">
                 <span className={`w-2 h-2 rounded-full mr-1.5 ${isSynced ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
@@ -333,6 +338,14 @@ export const ShellBar: React.FC<ShellBarProps> = ({
 
           {/* Right Role Indicator, Notifications & User Actions */}
           <div className="flex items-center space-x-3">
+            {/* If Admin Role: Badge */}
+            {currentRole === 'admin' && (
+              <div className="bg-indigo-950/70 border border-indigo-500/40 px-3 py-1 rounded-lg flex items-center gap-1.5 text-xs text-indigo-200 font-semibold">
+                <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="hidden sm:inline">Admin Portal</span>
+              </div>
+            )}
+
             {/* If Trainer Role: Badge */}
             {currentRole === 'trainer' && (
               <div className="bg-[#13202e] px-3 py-1 rounded-lg border border-slate-700 flex items-center gap-1.5 text-xs text-blue-200 font-semibold">
@@ -586,15 +599,33 @@ export const ShellBar: React.FC<ShellBarProps> = ({
 
             {/* Avatar & User Info */}
             <div className="flex items-center space-x-2 pl-2 border-l border-slate-700/80">
-              <div className="w-7 h-7 rounded-full bg-slate-600 border border-slate-500 flex items-center justify-center text-xs font-semibold text-white">
-                {currentRole === 'trainer' ? 'PT' : selectedStudent?.name.slice(0, 2).toUpperCase() || 'ST'}
+              <div
+                className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs font-semibold text-white ${
+                  currentRole === 'admin'
+                    ? 'bg-indigo-600 border-indigo-400'
+                    : 'bg-slate-600 border-slate-500'
+                }`}
+              >
+                {currentRole === 'admin'
+                  ? 'PA'
+                  : currentRole === 'trainer'
+                  ? (activeTrainer?.name || 'TR').slice(0, 2).toUpperCase()
+                  : selectedStudent?.name.slice(0, 2).toUpperCase() || 'ST'}
               </div>
               <div className="hidden sm:block text-left text-xs leading-none">
                 <div className="font-semibold text-slate-100">
-                  {currentRole === 'trainer' ? 'PPSTrainer' : selectedStudent?.name || 'Student'}
+                  {currentRole === 'admin'
+                    ? adminUsername
+                    : currentRole === 'trainer'
+                    ? activeTrainer?.name || 'Trainer'
+                    : selectedStudent?.name || 'Student'}
                 </div>
                 <div className="text-[10px] text-slate-400">
-                  {currentRole === 'trainer' ? 'Lead Trainer' : (selectedStudent?.phone || 'Enrolled Student')}
+                  {currentRole === 'admin'
+                    ? 'System Administrator'
+                    : currentRole === 'trainer'
+                    ? `@${activeTrainer?.username || 'trainer'}`
+                    : selectedStudent?.phone || 'Enrolled Student'}
                 </div>
               </div>
 

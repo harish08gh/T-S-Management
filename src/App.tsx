@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { dataService } from './services/firebase';
 import {
   Student,
@@ -7,6 +7,7 @@ import {
   ClassLink,
   CourseCompletionSettings,
   TrainerSystemSettings,
+  TrainerAccount,
   UserRole,
   TrainerTab
 } from './types';
@@ -23,16 +24,17 @@ import { CompletionTemplateEditor } from './components/trainer/CompletionTemplat
 import { TrainerSettings } from './components/trainer/TrainerSettings';
 import { ClassLinkModal } from './components/trainer/ClassLinkModal';
 import { StudentPortal } from './components/student/StudentPortal';
+import { AdminPortal } from './components/admin/AdminPortal';
 import { LoginPage } from './components/auth/LoginPage';
-import { CheckCircle2, AlertCircle, Info, RefreshCw } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 const AUTH_STORAGE_KEY = 'pps_auth_session_clean_v3';
 const SETTINGS_STORAGE_KEY = 'pps_trainer_system_settings_v3';
 
 const DEFAULT_TRAINER_SETTINGS: TrainerSystemSettings = {
-  trainerUsername: 'PPSTrainer',
-  trainerName: 'PPSTrainer',
-  trainerEmail: 'trainer@pps-sw.com',
+  trainerUsername: 'HARISH',
+  trainerName: 'HARISH',
+  trainerEmail: 'harish@pps-sw.com',
   trainerPhone: '+91 98400 00000',
   trainerPassword: 'PPS@2026',
   studentPassword: 'Student@PPS26',
@@ -74,6 +76,21 @@ const DEFAULT_TRAINER_SETTINGS: TrainerSystemSettings = {
 interface AuthSession {
   role: UserRole;
   studentId?: string;
+  trainerId?: string;
+}
+
+function doesRecordBelongToTrainer(
+  record: { trainerId?: string; trainerName?: string },
+  trainer: TrainerAccount | null
+): boolean {
+  if (!trainer) return false;
+  if (record.trainerId && record.trainerId === trainer.id) return true;
+  const rName = (record.trainerName || '').trim().toLowerCase();
+  if (!rName) return false;
+  return (
+    rName === trainer.name.trim().toLowerCase() ||
+    rName === trainer.username.trim().toLowerCase()
+  );
 }
 
 export default function App() {
@@ -81,7 +98,14 @@ export default function App() {
   const [authSession, setAuthSession] = useState<AuthSession | null>(() => {
     try {
       const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-      return stored ? JSON.parse(stored) : null;
+      if (!stored) return null;
+      const parsed: AuthSession = JSON.parse(stored);
+      // Invalidate legacy trainer sessions without a trainerId so multi-trainer isolation is enforced
+      if (parsed.role === 'trainer' && !parsed.trainerId) {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+        return null;
+      }
+      return parsed;
     } catch {
       return null;
     }
@@ -101,8 +125,10 @@ export default function App() {
         leaves: parsed.leaves || DEFAULT_TRAINER_SETTINGS.leaves,
         shiftTimingWeekday: parsed.shiftTimingWeekday || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekday,
         shiftTimingWeekend: parsed.shiftTimingWeekend || DEFAULT_TRAINER_SETTINGS.shiftTimingWeekend,
-        allowedPercentageStudentIds: parsed.allowedPercentageStudentIds || DEFAULT_TRAINER_SETTINGS.allowedPercentageStudentIds || [],
-        allowedAttendanceStudentIds: parsed.allowedAttendanceStudentIds || DEFAULT_TRAINER_SETTINGS.allowedAttendanceStudentIds || [],
+        allowedPercentageStudentIds:
+          parsed.allowedPercentageStudentIds || DEFAULT_TRAINER_SETTINGS.allowedPercentageStudentIds || [],
+        allowedAttendanceStudentIds:
+          parsed.allowedAttendanceStudentIds || DEFAULT_TRAINER_SETTINGS.allowedAttendanceStudentIds || [],
         holidays: parsed.holidays || DEFAULT_TRAINER_SETTINGS.holidays || []
       };
     } catch {
@@ -110,7 +136,7 @@ export default function App() {
     }
   });
 
-  const [role, setRole] = useState<UserRole>(authSession?.role || 'trainer');
+  const [role, setRole] = useState<UserRole>(authSession?.role || 'student');
   const [trainerTab, setTrainerTab] = useState<TrainerTab>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     try {
@@ -135,6 +161,10 @@ export default function App() {
   const [demos, setDemos] = useState<DemoStudent[]>(dataService.getDemos());
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(dataService.getAttendance());
   const [classLink, setClassLink] = useState<ClassLink>(dataService.getClassLink());
+  const [trainers, setTrainers] = useState<TrainerAccount[]>(dataService.getTrainers());
+  const [defaultTrainerPassword, setDefaultTrainerPassword] = useState<string>(
+    dataService.getDefaultTrainerPassword()
+  );
   const [completionSettings, setCompletionSettings] = useState<CourseCompletionSettings>(
     dataService.getCompletionSettings()
   );
@@ -165,6 +195,8 @@ export default function App() {
       setDemos(dataService.getDemos());
       setAttendance(dataService.getAttendance());
       setClassLink(dataService.getClassLink());
+      setTrainers(dataService.getTrainers());
+      setDefaultTrainerPassword(dataService.getDefaultTrainerPassword());
       setCompletionSettings(dataService.getCompletionSettings());
       setSyncStatus(dataService.connectionStatusText);
       setIsSynced(dataService.isFirestoreConnected);
@@ -174,6 +206,22 @@ export default function App() {
     const unsubscribe = dataService.subscribe(syncState);
     return () => unsubscribe();
   }, []);
+
+  // Active logged-in trainer (when role === 'trainer')
+  const activeTrainer = useMemo(() => {
+    if (!authSession || authSession.role !== 'trainer' || !authSession.trainerId) return null;
+    return trainers.find(t => t.id === authSession.trainerId) || null;
+  }, [authSession, trainers]);
+
+  // Enforce active trainer session validity (invalidate if deleted, deactivated, or password reset to default by Admin)
+  useEffect(() => {
+    if (authSession?.role === 'trainer') {
+      if (!activeTrainer || activeTrainer.status !== 'Active' || activeTrainer.isDefaultPassword) {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+        setAuthSession(null);
+      }
+    }
+  }, [authSession, activeTrainer]);
 
   // When logged in as student, bind ONLY to that student's identity
   useEffect(() => {
@@ -185,26 +233,120 @@ export default function App() {
     }
   }, [students, authSession]);
 
-  // Derived datasets
-  const ongoingStudents = students.filter(s => s.status === 'Ongoing' && !s.isIrregular);
-  const irregularStudents = students.filter(s => s.isIrregular);
-  const todayAttendance = attendance.filter(a => a.date === todayStr);
-  const markedStudentIds = new Set(todayAttendance.map(a => a.studentId));
-  const pendingAttendanceCount = ongoingStudents.filter(s => !markedStudentIds.has(s.id)).length;
-  const isLinkActive = dataService.isClassLinkActive();
+  // Trainer-isolated datasets (strict ownership per trainer)
+  const trainerStudents = useMemo(() => {
+    if (role === 'trainer') {
+      if (!activeTrainer) return [];
+      return students.filter(s => doesRecordBelongToTrainer(s, activeTrainer));
+    }
+    return students;
+  }, [role, activeTrainer, students]);
+
+  const trainerStudentIdSet = useMemo(
+    () => new Set(trainerStudents.map(s => s.id)),
+    [trainerStudents]
+  );
+
+  const trainerDemos = useMemo(() => {
+    if (role === 'trainer') {
+      if (!activeTrainer) return [];
+      return demos.filter(d => doesRecordBelongToTrainer(d, activeTrainer));
+    }
+    return demos;
+  }, [role, activeTrainer, demos]);
+
+  const trainerAttendance = useMemo(() => {
+    if (role === 'trainer') {
+      return attendance.filter(a => trainerStudentIdSet.has(a.studentId));
+    }
+    return attendance;
+  }, [role, attendance, trainerStudentIdSet]);
+
+  // Derived trainer datasets
+  const ongoingStudents = useMemo(
+    () => trainerStudents.filter(s => s.status === 'Ongoing' && !s.isIrregular),
+    [trainerStudents]
+  );
+  const irregularStudents = useMemo(
+    () => trainerStudents.filter(s => s.isIrregular),
+    [trainerStudents]
+  );
+  const todayAttendance = useMemo(
+    () => trainerAttendance.filter(a => a.date === todayStr),
+    [trainerAttendance, todayStr]
+  );
+  const markedStudentIds = useMemo(
+    () => new Set(todayAttendance.map(a => a.studentId)),
+    [todayAttendance]
+  );
+  const pendingAttendanceCount = useMemo(
+    () => ongoingStudents.filter(s => !markedStudentIds.has(s.id)).length,
+    [ongoingStudents, markedStudentIds]
+  );
+
+  // Scoped Class Link for current Trainer
+  const trainerClassLink = useMemo(() => {
+    return activeTrainer ? dataService.getClassLinkForTrainer(activeTrainer.id) : classLink;
+  }, [activeTrainer, classLink, trainers]);
+
+  const isTrainerLinkActive = activeTrainer
+    ? dataService.isClassLinkActive(activeTrainer.id)
+    : dataService.isClassLinkActive();
+
+  // Scoped Class Link for logged-in Student (matches their assigned trainer)
+  const studentTrainerKey = selectedStudent?.trainerId || selectedStudent?.trainerName;
+  const studentClassLink = useMemo(() => {
+    return studentTrainerKey ? dataService.getClassLinkForTrainer(studentTrainerKey) : classLink;
+  }, [studentTrainerKey, classLink, trainers]);
+
+  const isStudentLinkActive = studentTrainerKey
+    ? dataService.isClassLinkActive(studentTrainerKey)
+    : dataService.isClassLinkActive();
 
   // Attendance records for currently selected student (strictly isolated)
   const currentStudentAttendance = selectedStudent
     ? attendance.filter(a => a.studentId === selectedStudent.id)
     : [];
 
+  // Effective settings merged with active trainer profile for TrainerSettings
+  const effectiveTrainerSettings: TrainerSystemSettings = useMemo(() => {
+    if (!activeTrainer) return systemSettings;
+    return {
+      ...systemSettings,
+      trainerUsername: activeTrainer.username,
+      trainerName: activeTrainer.name,
+      trainerEmail: activeTrainer.email || systemSettings.trainerEmail,
+      trainerPhone: activeTrainer.phone || systemSettings.trainerPhone,
+      trainerPassword: activeTrainer.password
+    };
+  }, [systemSettings, activeTrainer]);
+
   // Authentication Handlers
-  const handleTrainerLoginSuccess = () => {
-    const session: AuthSession = { role: 'trainer' };
+  const handleAdminLoginSuccess = () => {
+    const session: AuthSession = { role: 'admin' };
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+    setAuthSession(session);
+    setRole('admin');
+    showToast('Signed in to Admin Portal as PPSAdmin', 'success');
+  };
+
+  const handleTrainerLoginSuccess = async (trainer: TrainerAccount) => {
+    await dataService.markTrainerLoggedIn(trainer.id);
+    const session: AuthSession = { role: 'trainer', trainerId: trainer.id };
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
     setAuthSession(session);
     setRole('trainer');
-    showToast('Signed in successfully as PPSTrainer', 'success');
+    setTrainerTab('dashboard');
+    showToast(`Signed in successfully as ${trainer.name}`, 'success');
+  };
+
+  const handleCompleteTrainerPasswordReset = async (
+    trainerId: string,
+    newPassword: string
+  ): Promise<TrainerAccount> => {
+    const updated = await dataService.updateTrainerPassword(trainerId, newPassword);
+    showToast('Personal password updated! Signing you in...', 'success');
+    return updated;
   };
 
   const handleStudentLoginSuccess = (student: Student) => {
@@ -223,10 +365,31 @@ export default function App() {
     showToast('Logged out successfully', 'info');
   };
 
-  // Trainer Settings Save
-  const handleSaveTrainerSettings = (newSettings: TrainerSystemSettings) => {
+  // Trainer Settings Save (syncs password/profile back to activeTrainer)
+  const handleSaveTrainerSettings = async (newSettings: TrainerSystemSettings) => {
     setSystemSettings(newSettings);
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(newSettings));
+
+    if (activeTrainer) {
+      const updatedPassword = newSettings.trainerPassword?.trim();
+      const updatedUsername = newSettings.trainerUsername?.trim() || activeTrainer.username;
+      const updatedName = newSettings.trainerName?.trim() || activeTrainer.name;
+
+      await dataService.saveTrainer({
+        ...activeTrainer,
+        name: updatedName,
+        username: updatedUsername,
+        email: newSettings.trainerEmail?.trim() || activeTrainer.email,
+        phone: newSettings.trainerPhone?.trim() || activeTrainer.phone,
+        password: updatedPassword || activeTrainer.password,
+        isDefaultPassword: updatedPassword ? updatedPassword === defaultTrainerPassword : activeTrainer.isDefaultPassword,
+        passwordUpdatedAt:
+          updatedPassword && updatedPassword !== activeTrainer.password
+            ? new Date().toISOString()
+            : activeTrainer.passwordUpdatedAt
+      });
+    }
+
     showToast('Trainer settings and security policies updated', 'success');
   };
 
@@ -242,15 +405,32 @@ export default function App() {
     showToast('Database wiped clean. You can now add fresh batches.', 'warning');
   };
 
-  // Handler: Save Student (Add / Edit)
+  // Handler: Save Student (Add / Edit) - enforces trainer ownership
   const handleSaveStudent = async (student: Student) => {
-    await dataService.saveStudent(student);
-    showToast(`Student record saved for ${student.name}`, 'success');
+    const ownedStudent: Student = activeTrainer
+      ? {
+          ...student,
+          trainerId: student.trainerId || activeTrainer.id,
+          trainerName:
+            !student.trainerName || student.trainerName === 'PPSTrainer'
+              ? activeTrainer.name
+              : student.trainerName
+        }
+      : student;
+    await dataService.saveStudent(ownedStudent);
+    showToast(`Student record saved for ${ownedStudent.name}`, 'success');
   };
 
   const handleBulkSaveStudents = async (newStudents: Student[]) => {
-    await dataService.saveStudentsBatch(newStudents);
-    showToast(`Successfully imported ${newStudents.length} students from CSV!`, 'success');
+    const ownedStudents = activeTrainer
+      ? newStudents.map(st => ({
+          ...st,
+          trainerId: activeTrainer.id,
+          trainerName: activeTrainer.name
+        }))
+      : newStudents;
+    await dataService.saveStudentsBatch(ownedStudents);
+    showToast(`Successfully imported ${ownedStudents.length} students into your roster!`, 'success');
   };
 
   // Handler: Delete Student
@@ -261,7 +441,7 @@ export default function App() {
 
   // Handler: Quick Mark Attendance from Dashboard
   const handleQuickMarkAttendance = async (studentId: string, status: 'Present' | 'Absent') => {
-    const student = students.find(s => s.id === studentId);
+    const student = trainerStudents.find(s => s.id === studentId);
     if (!student) return;
 
     const record: AttendanceRecord = {
@@ -278,12 +458,15 @@ export default function App() {
     };
 
     await dataService.recordAttendance(record);
-    showToast(`Marked ${student.name} as ${status} for today (${todayStr})`, status === 'Present' ? 'success' : 'warning');
+    showToast(
+      `Marked ${student.name} as ${status} for today (${todayStr})`,
+      status === 'Present' ? 'success' : 'warning'
+    );
   };
 
   // Handler: Quick Completion % delta
   const handleQuickUpdateCompletion = async (studentId: string, delta: number) => {
-    const student = students.find(s => s.id === studentId);
+    const student = trainerStudents.find(s => s.id === studentId);
     if (!student) return;
     const newPct = Math.min(100, Math.max(0, student.completionPercentage + delta));
     await dataService.updateStudentCompletion(studentId, newPct);
@@ -293,7 +476,7 @@ export default function App() {
   // Handler: Full Completion % Update (with optional DOE)
   const handleUpdateCompletion = async (studentId: string, percentage: number, doe?: string) => {
     await dataService.updateStudentCompletion(studentId, percentage, doe);
-    const student = students.find(s => s.id === studentId);
+    const student = trainerStudents.find(s => s.id === studentId);
     if (percentage >= 100) {
       showToast(`${student?.name || 'Student'} completed 100%! Date of Ending logged as ${doe}.`, 'success');
     } else {
@@ -304,7 +487,7 @@ export default function App() {
   // Handler: Move to Irregular / Regular
   const handleToggleRegular = async (studentId: string, isIrregular: boolean, reason?: string) => {
     await dataService.toggleStudentRegularStatus(studentId, isIrregular, reason);
-    const student = students.find(s => s.id === studentId);
+    const student = trainerStudents.find(s => s.id === studentId);
     if (isIrregular) {
       showToast(`Moved ${student?.name} to Irregular Student Page`, 'warning');
     } else {
@@ -312,15 +495,32 @@ export default function App() {
     }
   };
 
-  // Handler: Demo actions
+  // Handler: Demo actions (enforces trainer ownership)
   const handleSaveDemo = async (demo: DemoStudent) => {
-    await dataService.saveDemo(demo);
-    showToast(`Demo record saved for ${demo.name}`, 'success');
+    const ownedDemo: DemoStudent = activeTrainer
+      ? {
+          ...demo,
+          trainerId: demo.trainerId || activeTrainer.id,
+          trainerName:
+            !demo.trainerName || demo.trainerName === 'PPSTrainer'
+              ? activeTrainer.name
+              : demo.trainerName
+        }
+      : demo;
+    await dataService.saveDemo(ownedDemo);
+    showToast(`Demo record saved for ${ownedDemo.name}`, 'success');
   };
 
   const handleBulkSaveDemos = async (newDemos: DemoStudent[]) => {
-    await dataService.saveDemosBatch(newDemos);
-    showToast(`Successfully imported ${newDemos.length} demo candidates from CSV!`, 'success');
+    const ownedDemos = activeTrainer
+      ? newDemos.map(dm => ({
+          ...dm,
+          trainerId: activeTrainer.id,
+          trainerName: activeTrainer.name
+        }))
+      : newDemos;
+    await dataService.saveDemosBatch(ownedDemos);
+    showToast(`Successfully imported ${ownedDemos.length} demo candidates into your pipeline!`, 'success');
   };
 
   const handleDeleteDemo = async (id: string) => {
@@ -339,6 +539,13 @@ export default function App() {
     }
   ) => {
     const newStd = await dataService.convertDemoToOngoing(demoId, batchData);
+    if (activeTrainer && (!newStd.trainerId || newStd.trainerName === 'PPSTrainer')) {
+      await dataService.saveStudent({
+        ...newStd,
+        trainerId: activeTrainer.id,
+        trainerName: activeTrainer.name
+      });
+    }
     showToast(`Demo converted! ${newStd.name} enrolled in Ongoing Schedule`, 'success');
     setTrainerTab('class_schedule');
   };
@@ -369,10 +576,17 @@ export default function App() {
     );
   };
 
-  // Handler: Class Link update
+  // Handler: Class Link update (scoped to activeTrainer)
   const handleUpdateClassLink = async (data: Partial<ClassLink>) => {
-    await dataService.updateClassLink(data);
-    showToast('Class link updated & broadcasted', 'success');
+    await dataService.updateClassLink(
+      {
+        ...data,
+        trainerId: activeTrainer?.id || data.trainerId,
+        trainerName: activeTrainer?.name || data.trainerName || 'Trainer'
+      },
+      activeTrainer?.id
+    );
+    showToast('Class link updated & broadcasted to your students', 'success');
   };
 
   // Handler: Completion Settings
@@ -385,12 +599,16 @@ export default function App() {
   if (!authSession) {
     return (
       <LoginPage
+        onAdminLoginSuccess={handleAdminLoginSuccess}
         onTrainerLoginSuccess={handleTrainerLoginSuccess}
         onStudentLoginSuccess={handleStudentLoginSuccess}
         onFindStudentByPhone={(phone) => dataService.findStudentByPhone(phone)}
+        onAuthenticateTrainer={(username, password) =>
+          dataService.authenticateTrainer(username, password)
+        }
+        onCompleteTrainerPasswordReset={handleCompleteTrainerPasswordReset}
+        defaultTrainerPassword={defaultTrainerPassword}
         enrolledStudentsCount={students.length}
-        expectedTrainerUsername={systemSettings.trainerUsername || 'PPSTrainer'}
-        expectedTrainerPassword={systemSettings.trainerPassword}
         expectedStudentPassword={systemSettings.studentPassword}
       />
     );
@@ -401,13 +619,15 @@ export default function App() {
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-5 right-5 z-50 animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <div className={`px-4 py-3 rounded-lg shadow-lg flex items-center gap-2.5 text-xs font-semibold text-white ${
-            toastMessage.type === 'success'
-              ? 'bg-emerald-600'
-              : toastMessage.type === 'warning'
-              ? 'bg-amber-600'
-              : 'bg-[#0a6ed1]'
-          }`}>
+          <div
+            className={`px-4 py-3 rounded-lg shadow-lg flex items-center gap-2.5 text-xs font-semibold text-white ${
+              toastMessage.type === 'success'
+                ? 'bg-emerald-600'
+                : toastMessage.type === 'warning'
+                ? 'bg-amber-600'
+                : 'bg-[#0a6ed1]'
+            }`}
+          >
             {toastMessage.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-200" />
             ) : toastMessage.type === 'warning' ? (
@@ -425,12 +645,13 @@ export default function App() {
         currentRole={role}
         onRoleChange={setRole}
         selectedStudent={selectedStudent}
-        allStudents={students}
+        allStudents={role === 'trainer' ? trainerStudents : students}
         onSelectStudent={setSelectedStudent}
         syncStatus={syncStatus}
         isSynced={isSynced}
         onRefreshData={() => {
           setStudents(dataService.getStudents());
+          setTrainers(dataService.getTrainers());
           showToast('Data refreshed and synchronized', 'info');
         }}
         pendingAttendanceCount={pendingAttendanceCount}
@@ -438,14 +659,83 @@ export default function App() {
         onLogout={handleLogout}
         onToggleSidebar={toggleSidebarCollapse}
         onNavigateTab={(tab) => setTrainerTab(tab)}
-        demos={demos}
-        attendance={attendance}
-        classLink={classLink}
+        demos={role === 'trainer' ? trainerDemos : demos}
+        attendance={role === 'trainer' ? trainerAttendance : attendance}
+        classLink={role === 'trainer' ? trainerClassLink : classLink}
         todayStr={todayStr}
         onOpenClassLinkModal={() => setIsClassLinkModalOpen(true)}
+        activeTrainer={activeTrainer}
+        adminUsername="PPSAdmin"
       />
 
-      {/* Role: TRAINER PORTAL */}
+      {/* Role: ADMIN PORTAL */}
+      {role === 'admin' && (
+        <div className="flex-1 flex flex-col overflow-y-auto min-h-0 h-full bg-[#f5f6f8]" id="admin-screen-scroll">
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <AdminPortal
+              trainers={trainers}
+              students={students}
+              demos={demos}
+              defaultTrainerPassword={defaultTrainerPassword}
+              onUpdateDefaultPassword={async (newPw, syncPending) => {
+                await dataService.updateDefaultTrainerPassword(newPw, syncPending);
+                showToast(`Default trainer password updated to "${newPw}"`, 'success');
+              }}
+              onSaveTrainer={async (trainer) => {
+                await dataService.saveTrainer(trainer);
+                showToast(`Trainer account saved for ${trainer.name}`, 'success');
+              }}
+              onDeleteTrainer={async (trainerId) => {
+                await dataService.deleteTrainer(trainerId);
+                showToast('Trainer account removed', 'info');
+              }}
+              onResetTrainerPassword={async (trainerId) => {
+                const updated = await dataService.resetTrainerPasswordToDefault(trainerId);
+                showToast(
+                  `Password reset to default (${defaultTrainerPassword}) for ${updated.name}. They must set a new password on next login.`,
+                  'warning'
+                );
+              }}
+              onAssignStudentsToTrainer={async (studentIds, trainerId) => {
+                await dataService.assignStudentsToTrainer(studentIds, trainerId);
+                const tr = trainers.find(t => t.id === trainerId);
+                showToast(
+                  `Assigned ${studentIds.length} student(s) to ${tr?.name || 'selected trainer'}`,
+                  'success'
+                );
+              }}
+              onAssignDemosToTrainer={async (demoIds, trainerId) => {
+                await dataService.assignDemosToTrainer(demoIds, trainerId);
+                const tr = trainers.find(t => t.id === trainerId);
+                showToast(
+                  `Assigned ${demoIds.length} demo candidate(s) to ${tr?.name || 'selected trainer'}`,
+                  'success'
+                );
+              }}
+            />
+          </main>
+
+          <footer className="bg-white border-t border-[#d9e0e7] py-3 text-xs text-slate-500 mt-auto shrink-0">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
+              <div className="flex items-center space-x-2">
+                <span className="font-semibold text-slate-700">PPS Academy Admin Console</span>
+                <span>•</span>
+                <span>{systemSettings.institutionName}</span>
+              </div>
+              <div className="flex items-center space-x-4 text-[11px] text-slate-400">
+                <button
+                  onClick={handleLogout}
+                  className="text-rose-600 hover:underline font-semibold cursor-pointer"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </footer>
+        </div>
+      )}
+
+      {/* Role: TRAINER PORTAL (Isolated to activeTrainer's students & demos) */}
       {role === 'trainer' && (
         <div className="flex-1 flex overflow-hidden min-h-0 w-full">
           {/* Side Navigation Bar - FIXED ON LEFT */}
@@ -454,10 +744,12 @@ export default function App() {
             onTabChange={setTrainerTab}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={toggleSidebarCollapse}
+            activeTrainerName={activeTrainer?.name || 'Trainer'}
+            activeTrainerShift={`${systemSettings.shiftTimingWeekday.start} - ${systemSettings.shiftTimingWeekday.end}`}
             counts={{
-              allStudents: students.length,
+              allStudents: trainerStudents.length,
               ongoing: ongoingStudents.length,
-              demos: demos.length,
+              demos: trainerDemos.length,
               attendanceToday: todayAttendance.filter(a => a.attendance === 'Present').length,
               irregular: irregularStudents.length,
               pendingAttendance: pendingAttendanceCount
@@ -467,99 +759,99 @@ export default function App() {
           {/* Main Content Area - ONLY THIS SCREEN AREA SCROLLS */}
           <div className="flex-1 flex flex-col overflow-y-auto min-h-0 h-full bg-[#f5f6f8]" id="trainer-screen-scroll">
             <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6">
-            {trainerTab === 'dashboard' && (
-              <Dashboard
-                students={students}
-                demos={demos}
-                attendance={attendance}
-                classLink={classLink}
-                isClassLinkActive={isLinkActive}
-                onNavigateTab={setTrainerTab}
-                onQuickMarkAttendance={handleQuickMarkAttendance}
-                onQuickUpdateCompletion={handleQuickUpdateCompletion}
-                onOpenClassLinkModal={() => setIsClassLinkModalOpen(true)}
-                onSaveStudent={handleSaveStudent}
-                todayStr={todayStr}
-                settings={systemSettings}
-              />
-            )}
+              {trainerTab === 'dashboard' && (
+                <Dashboard
+                  students={trainerStudents}
+                  demos={trainerDemos}
+                  attendance={trainerAttendance}
+                  classLink={trainerClassLink}
+                  isClassLinkActive={isTrainerLinkActive}
+                  onNavigateTab={setTrainerTab}
+                  onQuickMarkAttendance={handleQuickMarkAttendance}
+                  onQuickUpdateCompletion={handleQuickUpdateCompletion}
+                  onOpenClassLinkModal={() => setIsClassLinkModalOpen(true)}
+                  onSaveStudent={handleSaveStudent}
+                  todayStr={todayStr}
+                  settings={effectiveTrainerSettings}
+                />
+              )}
 
-            {trainerTab === 'student_details' && (
-              <StudentDetails students={students} />
-            )}
+              {trainerTab === 'student_details' && (
+                <StudentDetails students={trainerStudents} />
+              )}
 
-            {trainerTab === 'demo_management' && (
-              <DemoManagement
-                demos={demos}
-                onSaveDemo={handleSaveDemo}
-                onBulkSaveDemos={handleBulkSaveDemos}
-                onDeleteDemo={handleDeleteDemo}
-                onConvertDemoToOngoing={handleConvertDemoToOngoing}
-              />
-            )}
+              {trainerTab === 'demo_management' && (
+                <DemoManagement
+                  demos={trainerDemos}
+                  onSaveDemo={handleSaveDemo}
+                  onBulkSaveDemos={handleBulkSaveDemos}
+                  onDeleteDemo={handleDeleteDemo}
+                  onConvertDemoToOngoing={handleConvertDemoToOngoing}
+                />
+              )}
 
-            {trainerTab === 'attendance_tracking' && (
-              <AttendanceTracking
-                ongoingStudents={ongoingStudents}
-                attendance={attendance}
-                onRecordAttendance={handleRecordAttendance}
-                onUpdateTopic={handleUpdateTopic}
-                todayStr={todayStr}
-                settings={systemSettings}
-              />
-            )}
+              {trainerTab === 'attendance_tracking' && (
+                <AttendanceTracking
+                  ongoingStudents={ongoingStudents}
+                  attendance={trainerAttendance}
+                  onRecordAttendance={handleRecordAttendance}
+                  onUpdateTopic={handleUpdateTopic}
+                  todayStr={todayStr}
+                  settings={effectiveTrainerSettings}
+                />
+              )}
 
-            {trainerTab === 'class_schedule' && (
-              <ClassSchedule
-                ongoingStudents={ongoingStudents}
-                attendance={attendance}
-                todayStr={todayStr}
-                onSaveStudent={handleSaveStudent}
-                onBulkSaveStudents={handleBulkSaveStudents}
-                onDeleteStudent={handleDeleteStudent}
-                onUpdateCompletion={handleUpdateCompletion}
-                onToggleRegular={handleToggleRegular}
-                onNavigateToIrregular={() => setTrainerTab('irregular_students')}
-                classLink={classLink}
-                onOpenClassLinkModal={() => setIsClassLinkModalOpen(true)}
-              />
-            )}
+              {trainerTab === 'class_schedule' && (
+                <ClassSchedule
+                  ongoingStudents={ongoingStudents}
+                  attendance={trainerAttendance}
+                  todayStr={todayStr}
+                  onSaveStudent={handleSaveStudent}
+                  onBulkSaveStudents={handleBulkSaveStudents}
+                  onDeleteStudent={handleDeleteStudent}
+                  onUpdateCompletion={handleUpdateCompletion}
+                  onToggleRegular={handleToggleRegular}
+                  onNavigateToIrregular={() => setTrainerTab('irregular_students')}
+                  classLink={trainerClassLink}
+                  onOpenClassLinkModal={() => setIsClassLinkModalOpen(true)}
+                />
+              )}
 
-            {trainerTab === 'irregular_students' && (
-              <IrregularStudents
-                irregularStudents={irregularStudents}
-                onReactivateStudent={(id) => handleToggleRegular(id, false)}
-                onNavigateToSchedule={() => setTrainerTab('class_schedule')}
-              />
-            )}
+              {trainerTab === 'irregular_students' && (
+                <IrregularStudents
+                  irregularStudents={irregularStudents}
+                  onReactivateStudent={(id) => handleToggleRegular(id, false)}
+                  onNavigateToSchedule={() => setTrainerTab('class_schedule')}
+                />
+              )}
 
-            {trainerTab === 'class_links' && (
-              <DailyClassLink
-                currentLink={classLink}
-                onUpdateClassLink={handleUpdateClassLink}
-                isLinkActive={isLinkActive}
-              />
-            )}
+              {trainerTab === 'class_links' && (
+                <DailyClassLink
+                  currentLink={trainerClassLink}
+                  onUpdateClassLink={handleUpdateClassLink}
+                  isLinkActive={isTrainerLinkActive}
+                />
+              )}
 
-            {trainerTab === 'completion_template' && (
-              <CompletionTemplateEditor
-                settings={completionSettings}
-                onSaveSettings={handleSaveCompletionSettings}
-                sampleStudent={selectedStudent || undefined}
-              />
-            )}
+              {trainerTab === 'completion_template' && (
+                <CompletionTemplateEditor
+                  settings={completionSettings}
+                  onSaveSettings={handleSaveCompletionSettings}
+                  sampleStudent={selectedStudent || trainerStudents[0] || undefined}
+                />
+              )}
 
-            {trainerTab === 'settings' && (
-              <TrainerSettings
-                settings={systemSettings}
-                onSaveSettings={handleSaveTrainerSettings}
-                students={students}
-                demos={demos}
-                attendance={attendance}
-                onClearAttendance={handleClearAttendance}
-                onWipeDatabase={handleWipeDatabase}
-              />
-            )}
+              {trainerTab === 'settings' && (
+                <TrainerSettings
+                  settings={effectiveTrainerSettings}
+                  onSaveSettings={handleSaveTrainerSettings}
+                  students={trainerStudents}
+                  demos={trainerDemos}
+                  attendance={trainerAttendance}
+                  onClearAttendance={handleClearAttendance}
+                  onWipeDatabase={handleWipeDatabase}
+                />
+              )}
             </main>
 
             {/* Enterprise Footer inside scrollable screen area */}
@@ -591,8 +883,8 @@ export default function App() {
             {selectedStudent ? (
               <StudentPortal
                 currentStudent={selectedStudent}
-                classLink={classLink}
-                isClassLinkActive={isLinkActive}
+                classLink={studentClassLink}
+                isClassLinkActive={isStudentLinkActive}
                 attendanceRecords={currentStudentAttendance}
                 completionSettings={completionSettings}
                 onStudentTouchLink={handleStudentTouchLink}
@@ -647,7 +939,7 @@ export default function App() {
       <ClassLinkModal
         isOpen={isClassLinkModalOpen}
         onClose={() => setIsClassLinkModalOpen(false)}
-        currentLink={classLink}
+        currentLink={trainerClassLink}
         onSave={handleUpdateClassLink}
       />
     </div>

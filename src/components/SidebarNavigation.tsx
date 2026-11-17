@@ -22,6 +22,8 @@ interface SidebarNavigationProps {
   onTabChange: (tab: TrainerTab) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  activeTrainerName?: string;
+  activeTrainerShift?: string;
   counts: {
     allStudents: number;
     ongoing: number;
@@ -37,6 +39,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
   onTabChange,
   isCollapsed,
   onToggleCollapse,
+  activeTrainerName = 'Lead Trainer',
+  activeTrainerShift = '09:00 - 06:00',
   counts
 }) => {
   const tabs = [
@@ -219,19 +223,19 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
       <div className="shrink-0 p-3 border-t border-[#26374a] bg-[#141e2b]/80">
         {!isCollapsed ? (
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="font-semibold text-slate-300">Lead Trainer</span>
-              <span className="text-[10px] text-emerald-400 font-mono">Active</span>
+            <div className="flex items-center justify-between text-[11px] gap-2">
+              <span className="font-semibold text-slate-200 truncate">{activeTrainerName}</span>
+              <span className="text-[10px] text-emerald-400 font-mono shrink-0">Active</span>
             </div>
             <div className="text-[10px] text-slate-400 flex items-center justify-between">
               <span>Shift: Weekdays</span>
-              <span className="font-mono">09:00 - 06:00</span>
+              <span className="font-mono">{activeTrainerShift}</span>
             </div>
           </div>
         ) : (
-          <div className="flex justify-center" title="PPSTrainer">
+          <div className="flex justify-center" title={activeTrainerName}>
             <div className="w-6 h-6 rounded-full bg-blue-600/80 flex items-center justify-center text-[10px] font-bold text-white">
-              PT
+              {activeTrainerName.slice(0, 2).toUpperCase()}
             </div>
           </div>
         )}
